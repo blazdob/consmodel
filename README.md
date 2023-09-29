@@ -1,6 +1,14 @@
-# Welcome to ConsModel 👋
+# Welcome to ConsModel library 👋
 
-> The library aims to provide a simple way to create individual consumer loads, generation.
+> The library aims to provide a simple way to create individual consumer loads and generation. The main idea of the library is to be able to easily create consumption or generation power consumption profiles.
+> The library is a centralised modelling tool that implements the following consumption/generation consumptions:
+>   * Pure consumption model,
+>   * Solar plant model,
+>   * Heat pump model,
+>   * Electric vehicle modelling,
+>   * possibly other models...
+
+The main idea of the library is to be able to easily create consumption or generation power consumption profiles.
 
 ### 🏠 [Homepage](https://github.com/blazdob/consmodel)
 
