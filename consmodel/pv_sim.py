@@ -1,150 +1,81 @@
 from pvlib.irradiance import get_total_irradiance
 from pvlib.location import Location
-from meteostat import Point, Hourly
 from datetime import datetime
-from tzfpy import get_tz
 import pandas as pd
 import numpy as np
-import warnings
 import pvlib
+
+from base_model import BaseModel
 
 from scipy.optimize import curve_fit
 from scipy.special import exp10
 
-warnings.filterwarnings("ignore")
-
-
-class PV:
+class PV(BaseModel):
 	"""
-	Class to represent a PVSim object.
+	Class to represent a PV object.
 
 	Attributes
 	----------
 	id : int
-		The id of the PVSim object.
+		The id of the PV model object.
 	name : str
-		The name of the PVSim object.
+		The name of the PV model object.
+	TZ : str
+		The timezone of the PV model object.
+	lat : float
+		The latitude of the PV model object.
+	lon : float
+		The longitude of the PV model object.
+	alt : float
+		The altitude of the PV model object.
+	pv_size : float
+		The size of the PV model object in kW.
 
 	Methods
 	-------
 	* __init__(self, id: int, name: str)
-		Constructor for the PVSim class.
+		Constructor for the PV model class.
 	* __repr__(self)
-		Returns a string representation of the PVSim object.
+		Returns a string representation of the PV model object.
 	* __str__(self)
-		Returns a string representation of the PVSim object.
+		Returns a string representation of the PV model object.
 	* __eq__(self, other)
-		Returns True if the PVSim objects are equal, False otherwise.
+		Returns True if the PV model objects are equal, False otherwise.
 	* __hash__(self)
-		Returns a hash value for the PVSim object.
+		Returns a hash value for the PV model object.
 	* get_irradiance_data(self, start end freq)
 		Returns a pandas dataframe with the columns about the irradiance data.
 	* get_weather_data(self, start end freq)
 		Returns a pandas dataframe with the columns about the weather data.
-	* model_solar(self, pv_size, pv_efficiency, pv_azimuth, pv_tilt, pv_type)
+	* model(self, pv_size, pv_efficiency, pv_azimuth, pv_tilt, pv_type)
 		Returns a pandas dataframe with the columns about the solar model.
 	* simulate(self,pv_size,start,end,freq,model,consider_cloud_cover,tilt,orient)
 		Returns a pandas dataframe with the columns about the simulation and
 		all the results of the simulation.
 	"""
 	def __init__(self,
+				lat,
+				lon,
+				alt,
 				id: int = 0,
-				name: str = "test",
+				name: str = "PV_default",
 				TZ: str = None,
-				use_utc: bool = False,
-				lat: float = 0.0,
-				lon: float = 0.0,
-				alt: float = 0.0,
-				pv_size: float = 1000.0):
-		self._id = id
-		self._name = name
-		if TZ is None:
-			if use_utc:
-				self._TZ = 'UTC'
-			else:
-				self._TZ = get_tz(lon, lat)
-		else:
-			self._TZ = TZ
-		self._lat = lat
-		self._lon = lon
-		self._alt = alt
-		#infer timezone from lat/lon
+				use_utc: bool = False,):
+		super().__init__(id, lat, lon, alt, name, TZ, use_utc)
 		self._location = Location(lat,
 					lon,
 					tz=self._TZ,
 					altitude=alt,
 					name=name)
-		
-		self._pv_size = pv_size
-		self.results = pd.DataFrame()
 
 	def __repr__(self):
-		return f"PVSim(id={self.id}, name={self.name})"
+		return f"PV model(id={self.id}, name={self.name})"
 	
 	def __str__(self):
-		return f"PVSim(id={self.id}, name={self.name})"
-	
-	def __eq__(self, other):
-		return self.id == other.id and self.name == other.name
-	
-	def __hash__(self):
-		return hash((self.id, self.name))
+		return f"PV model(id={self.id}, name={self.name})"
 	
 	#__________________________________________________________________________
 	# Properties
-	@property
-	def id(self):
-		return self._id
-
-	@property
-	def name(self):
-		return self._name
-	
-	@name.setter
-	def name(self, name):
-		self._name = name
-
-	@property
-	def lat(self):
-		return self._lat
-	
-	@property
-	def lon(self):
-		return self._lon
-	
-	@property
-	def alt(self):
-		return self._alt
-	
-	@property
-	def TZ(self):
-		return self._TZ
-	
-	@TZ.setter
-	def TZ(self, TZ):
-		if TZ is None:
-			self._TZ = get_tz(self.lat, self.lon)
-		else:
-			self._TZ = TZ
-	
-	@property
-	def lat_lon_alt(self):
-		return (self._lat, self._lon, self._alt)
-
-	@lat_lon_alt.setter
-	def lat_lon_alt(self, lat_lon_alt):
-		self._lat = lat_lon_alt[0]
-		self._lon = lat_lon_alt[1]
-		self._alt = lat_lon_alt[2]
-		#recalculate timezone
-		self.TZ = get_tz(lat_lon_alt[0], lat_lon_alt[1])
-		#recalculate location
-		self._location = Location(self.lat,
-					self.lon,
-					tz=self.TZ,
-					altitude=self.alt,
-					name=self.name)
-	
 	@property
 	def pv_size(self):
 		return self._pv_size
@@ -152,12 +83,28 @@ class PV:
 	@pv_size.setter
 	def pv_size(self, pv_size):
 		self._pv_size = pv_size
+
+	@property
+	def lat_lon_alt(self):
+		return (self._lat, self._lon, self._alt)
+	
+	@lat_lon_alt.setter
+	def lat_lon_alt(self, lat_lon_alt):
+		self._lat = lat_lon_alt[0]
+		self._lon = lat_lon_alt[1]
+		self._alt = lat_lon_alt[2]
+		#recalculate timezone
+		# recalculate location
+		self._location = Location(self.lat,
+					self.lon,
+					tz=self.TZ,
+					altitude=self.alt,
+					name=self.name)
 	
 	@property
 	def location(self):
 		return self._location
-
-
+	
 	# __________________________________________________________________________
 	# Methods
 	# __________________________________________________________________________
@@ -185,6 +132,7 @@ class PV:
 			dni ... direct normal irradiance
 			dhi ... diffuse horizontal irradiance
 		"""
+		print(start, end, freq, model, self.TZ)
 		times = pd.date_range(start=start,
 								end=end,
 								freq=freq,
@@ -202,54 +150,12 @@ class PV:
 						})
 		return self.results
 
-	def get_weather_data(self,
-						start: datetime = None,
-						end: datetime = None,
-						freq: str = "15min"):
-		"""
-		INPUT:
-		Function takes metadata dictionary as an input and includes the following keys:
-			'latitude'      ... float,
-			'longitude'     ... float,
-			'altitude'      ... float,
-			'start_date'    ... datetime,
-			'end_date'      ... datetime,
-			'freq'          ... str,
-		OUTPUT:
-			weather_data ... pandas dataframe with 
-			weather data that includesthe following columns:
-				temp ... The air temperature in °C
-				dwpt ... The dew point in °C
-				rhum ... The relative humidity in percent (%)
-				prcp ... The one hour precipitation total in mm
-				snow ... The snow depth in mm
-				wdir ... The average wind direction in degrees (°)
-				wspd ... The average wind speed in km/h
-				wpgt ... The peak wind gust in km/h
-				pres ... The average sea-level air pressure in hPa
-				tsun ... The one hour sunshine total in minutes (m)
-				coco ... The weather condition code
-		"""
-		location = Point(self.lat, self.lon, self.alt)
-		weather_data = Hourly(location, 
-								start,
-								end,
-								self.TZ)
-		weather_data = weather_data.fetch()
-		weather_data = weather_data.iloc[:-1]
-		weather_data = weather_data.resample(freq) \
-									.mean() \
-									.interpolate(method='linear')
-		self.results = pd.concat([self.results, weather_data], axis=1)
-
-		return self.results
-
-	def model_solar(self,
-					pv_size: float = 0,
-					consider_cloud_cover: bool = False,
-					tilt: int = 35,
-					orient: int = 180,
-					pv_efficiency: float = 1100.,):
+	def model(self,
+			pv_size: float = 0.,
+			consider_cloud_cover: bool = False,
+			tilt: int = 35,
+			orient: int = 180,
+			pv_efficiency: float = 1100.,):
 		"""
 		INPUT:
 		Function takes metadata dictionary as an input and includes the following keys:
@@ -280,10 +186,7 @@ class PV:
 				eta_rel     ... relative efficiency of the pv module
 				p_mp        ... output power of the pv array
 		"""
-		
-
 		solpos = self.location.get_solarposition(self.results.index)
-
 		total_irrad = get_total_irradiance(tilt,
 											orient,
 											solpos.apparent_zenith,
@@ -305,7 +208,6 @@ class PV:
 					'k_rs': 0.06999,
 					'k_rsh': 0.26144
 					}
-
 		self.results['eta_rel'] = self.pvefficiency_adr(self.results['poa_global'],
 											self.results['temp_pv'],
 											**adr_params)
@@ -331,21 +233,6 @@ class PV:
 								* (self.results['poa_global'] / pv_efficiency)
 		self.results = self.results[1:]
 		return self.results
-
-	
-	def get_average_daily_profile(self, p_mp: pd.DataFrame = None):
-		"""
-		INPUT:
-			p_mp ... output power of the pv array
-		OUTPUT:
-			average_daily_production ... dataframe with the average daily profile
-		"""
-		# 2021-12-31 23:53:00+01:00 get the date and hour
-
-		# get the average daily profile
-		p_mp.index = pd.to_datetime(p_mp.index)
-		average_daily_production = p_mp.groupby([p_mp.index.hour]).mean()
-		return average_daily_production
 
 	# @classmethod
 	def pvefficiency_adr(self, effective_irradiance, temp_cell,
@@ -454,8 +341,11 @@ class PV:
 		return eta
 
 	@classmethod
-	def fit_pvefficiency_adr(effective_irradiance, temp_cell, eta,
-							dict_output=True, **kwargs):
+	def fit_pvefficiency_adr(effective_irradiance,
+							temp_cell,
+							eta,
+							dict_output=True,
+							**kwargs):
 		"""
 		Determine the parameters of the ADR module efficiency model by non-linear
 		least-squares fit to lab or field measurements.
@@ -534,15 +424,15 @@ class PV:
 			return popt
 
 	def simulate(self,
-				pv_size: float = 1,
+				pv_size: float,
 				start: datetime = None,
 				end: datetime = None,
 				year: int = 2022,
 				freq: str = "15min",
 				model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
-				consider_cloud_cover: float = False,
+				consider_cloud_cover: bool = False,
 				tilt: int = 35,
-				orient: int = 180):
+				orient: int = 180,):
 		"""
 		INPUT:
 		Function takes metadata dictionary as an input and includes the following keys:
@@ -559,12 +449,45 @@ class PV:
 		"""
 		if (start is None) or (end is None):
 			if year is None:
-				raise ValueError("year must be provided if start and end are not")
+				raise ValueError("Year must be provided if start and end are not.")
 			start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
 			end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
-
 		self.get_irradiance_data(start, end, freq, model)
 		self.get_weather_data(start, end, freq)
-		self.model_solar(pv_size*1000, consider_cloud_cover, tilt, orient)
-		self.results["p_mp"] = self.results["p_mp"]/1000
-		return self.results["p_mp"]
+		self.model(pv_size*1000, consider_cloud_cover, tilt, orient)
+		self.results.rename(columns={"p_mp": "P"}, inplace=True)
+		self.results["P"] = self.results["P"]/1000
+		self.timeseries = self.results["P"]
+		return self.timeseries
+
+if __name__ == '__main__':
+
+	pv = PV(lat=46.155768, lon=14.304951, alt=400, id=1, name="test", TZ="Europe/Vienna")
+	import time
+	start_time = time.time()
+	year = 2022
+	timeseries = pv.simulate(pv_size=14.,
+						year=year,
+						freq="15min",
+						model="ineichen",
+						consider_cloud_cover=True)
+	end_time = time.time()
+	print("time elapsed: ", end_time - start_time)
+
+	print("Total: ", pv.results['P'].sum()/1000000/4, "MWh")
+	print("Winter:", pv.results["P"][32000:].sum()/1000000 + pv.results["P"][:5000].sum()/1000000/4, "MWh")
+	# # get the sum for the summer time (june to august) and divide by 1000000 to get the value in MWh
+	print("Summer:", pv.results['P'][16800:25500].sum()/1000000/4, "MWh")
+	# get the sum for the interseason time  and divide by 1000000 to get the value in MWh
+	print("interseasion:", pv.results['P'][25500:32000].sum()/1000000 + pv.results["P"][5000:16800].sum()/1000000/4, "MWh")
+
+	# # plot single day
+	# pv.results['P']['2022-07-10':'2022-07-15'].plot()
+	# plt.show()
+
+	# pv.results['P'][:8000].plot(label="winter", color="blue")
+	# pv.results['P'][32000:].plot(label="winter", color="blue")
+	# pv.results['P'][16800:25500].plot(label="summer", color="red")
+	# pv.results['P'][25500:32000].plot(label="interseason", color="orange")
+	# pv.results['P'][8000:16800].plot(label="interseason", color="orange")
+	# plt.show()
