@@ -1,15 +1,10 @@
 import unittest
-from consmodel import PV
+from consmodel.pv_sim import PV
 import os
 
 class TestPV(unittest.TestCase):
 
     def test_size(self):
-        from consmodel import PV
-        import pandas as pd
-        import numpy as np
-        import matplotlib.pyplot as plt
-
         # create a simple PV model
         pv = PV(lat=46.155768,
                     lon=14.304951,
