@@ -14,7 +14,7 @@ class TestBS(unittest.TestCase):
         batt = BS(lat=46.155768,
                     lon=14.304951,
                     alt=400,
-                    id=1,
+                    index=1,
                     st_type="10kWh_5kW")
         timeseries = batt.simulate(control_type="installed_power",
                                 p_kw=test_consumption_df)
@@ -25,7 +25,7 @@ class TestBS(unittest.TestCase):
         batt = BS(lat=46.155768,
                     lon=14.304951,
                     alt=400,
-                    id=1,
+                    index=1,
                     st_type="10kWh_5kW")
         test_data = pd.DataFrame({"P": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]},
                                     index=pd.date_range("2020-01-01 06:00:00",
@@ -42,7 +42,7 @@ class TestBS(unittest.TestCase):
         batt = BS(lat=46.155768,
                     lon=14.304951,
                     alt=400,
-                    id=1,
+                    index=1,
                     st_type="10kWh_5kW")
         test_data = pd.DataFrame({"P": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]}, index=pd.date_range("2020-01-01 06:00:00", periods=17, freq="15min"))
         timeseries = batt.simulate(control_type="production_saving",

@@ -36,7 +36,7 @@ pip3 install consmodel
             alt=400,
             id=1,
             name="test",
-            TZ="Europe/Vienna")
+            tz="Europe/Vienna")
    timeseries = pv.simulate(pv_size=14.,
        exit()           year=2022,
                   freq="15min",

@@ -9,9 +9,9 @@ class TestPV(unittest.TestCase):
         pv = PV(lat=46.155768,
                     lon=14.304951,
                     alt=400,
-                    id=1,
+                    index=1,
                     name="test",
-                    TZ="Europe/Vienna")
+                    tz="Europe/Vienna")
         timeseries = pv.simulate(pv_size=14.,
                                 year=2022,
                                 freq="15min",
