@@ -133,8 +133,5 @@ def get_pump_data(self, year, month, day, wanted_temp):
 
 if __name__ == '__main__':
 	hp = HP(id=1, name="test", lat=46.155768, lon=14.304951, alt=400, TZ="Europe/Vienna")
-	timeseries = hp.simulate(25, year=2022)
-	print(timeseries)
-	import matplotlib.pyplot as plt
-	timeseries.plot()
-	plt.show()
+	timeseries = hp.simulate(25,
+						  	year=2022)

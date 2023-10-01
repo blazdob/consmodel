@@ -461,33 +461,9 @@ class PV(BaseModel):
 		return self.timeseries
 
 if __name__ == '__main__':
-
 	pv = PV(lat=46.155768, lon=14.304951, alt=400, id=1, name="test", TZ="Europe/Vienna")
-	import time
-	start_time = time.time()
-	year = 2022
 	timeseries = pv.simulate(pv_size=14.,
-						year=year,
+						year=2022,
 						freq="15min",
 						model="ineichen",
 						consider_cloud_cover=True)
-	end_time = time.time()
-	print("time elapsed: ", end_time - start_time)
-
-	print("Total: ", pv.results['P'].sum()/1000000/4, "MWh")
-	print("Winter:", pv.results["P"][32000:].sum()/1000000 + pv.results["P"][:5000].sum()/1000000/4, "MWh")
-	# # get the sum for the summer time (june to august) and divide by 1000000 to get the value in MWh
-	print("Summer:", pv.results['P'][16800:25500].sum()/1000000/4, "MWh")
-	# get the sum for the interseason time  and divide by 1000000 to get the value in MWh
-	print("interseasion:", pv.results['P'][25500:32000].sum()/1000000 + pv.results["P"][5000:16800].sum()/1000000/4, "MWh")
-
-	# # plot single day
-	# pv.results['P']['2022-07-10':'2022-07-15'].plot()
-	# plt.show()
-
-	# pv.results['P'][:8000].plot(label="winter", color="blue")
-	# pv.results['P'][32000:].plot(label="winter", color="blue")
-	# pv.results['P'][16800:25500].plot(label="summer", color="red")
-	# pv.results['P'][25500:32000].plot(label="interseason", color="orange")
-	# pv.results['P'][8000:16800].plot(label="interseason", color="orange")
-	# plt.show()
