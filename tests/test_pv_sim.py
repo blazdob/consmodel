@@ -1,5 +1,5 @@
 import unittest
-from consmodel.pv_sim import PV
+from .consmodel.pv_sim import PV
 import os
 
 class TestPV(unittest.TestCase):

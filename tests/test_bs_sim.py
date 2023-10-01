@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from consmodel.bs_sim import BS
+from .consmodel.bs_sim import BS
 
 class TestBS(unittest.TestCase):
 
