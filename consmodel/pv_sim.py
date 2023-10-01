@@ -1,5 +1,9 @@
 from pvlib.irradiance import get_total_irradiance
 from pvlib.location import Location
+
+from scipy.optimize import curve_fit
+from scipy.special import exp10
+
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -7,8 +11,6 @@ import pvlib
 
 from consmodel.base_model import BaseModel
 
-from scipy.optimize import curve_fit
-from scipy.special import exp10
 
 class PV(BaseModel):
 	"""

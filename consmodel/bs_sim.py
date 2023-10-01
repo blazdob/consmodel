@@ -1,11 +1,11 @@
-from consmodel.utils.st_types import StorageType
 from scipy import optimize
 import pandas as pd
 import warnings
 
+from consmodel.utils.st_types import StorageType
 from consmodel.base_model import BaseModel
 
-class Battery(BaseModel):
+class BS(BaseModel):
 	"""
 	Class to represent a battery.
 	
@@ -425,7 +425,6 @@ class Battery(BaseModel):
 		
 if __name__ == "__main__":
 	test_data = pd.DataFrame({"P": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]}, index=pd.date_range("2020-01-01 06:00:00", periods=17, freq="15min"))
-	batt = Battery(lat=46.155768, lon=14.304951, alt=400, id=1, st_type="10kWh_5kW")
+	batt = BS(lat=46.155768, lon=14.304951, alt=400, id=1, st_type="10kWh_5kW")
 	timeseries = batt.simulate(control_type="installed_power",
-					p_kw=test_data,
-					)
+					p_kw=test_data,)

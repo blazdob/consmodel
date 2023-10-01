@@ -1,7 +1,7 @@
+from datetime import datetime
+import hplib.hplib as hpl
 import pandas as pd
 import numpy as np
-import hplib.hplib as hpl
-from datetime import datetime
 import meteostat
 
 from consmodel.base_model import BaseModel
