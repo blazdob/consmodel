@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import pvlib
 
-from base_model import BaseModel
+from consmodel.base_model import BaseModel
 
 from scipy.optimize import curve_fit
 from scipy.special import exp10

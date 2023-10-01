@@ -1,9 +1,9 @@
-from utils.st_types import StorageType
+from consmodel.utils.st_types import StorageType
 from scipy import optimize
 import pandas as pd
 import warnings
 
-from base_model import BaseModel
+from consmodel.base_model import BaseModel
 
 class Battery(BaseModel):
 	"""

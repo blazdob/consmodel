@@ -4,7 +4,7 @@ import hplib.hplib as hpl
 from datetime import datetime
 import meteostat
 
-from base_model import BaseModel
+from consmodel.base_model import BaseModel
 
 class HP(BaseModel):
 	"""
