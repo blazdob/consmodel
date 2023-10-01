@@ -428,3 +428,4 @@ if __name__ == "__main__":
 	batt = BS(lat=46.155768, lon=14.304951, alt=400, id=1, st_type="10kWh_5kW")
 	timeseries = batt.simulate(control_type="installed_power",
 					p_kw=test_data,)
+	print(timeseries)
