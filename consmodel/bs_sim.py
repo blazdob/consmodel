@@ -154,14 +154,6 @@ class BS(BaseModel):
             raise ValueError("Max_e_kwh has to be larger than 0.")
         self._max_e_kwh = max_e_kwh
 
-    @soc.setter
-    def soc(self, soc):
-        if not isinstance(soc, float):
-            raise TypeError("SOC has to be a float.")
-        if soc < 0 or soc > 1:
-            raise ValueError("SOC must be between 0 and 1.")
-        self._soc = soc
-
     @current_p_kw.setter
     def current_p_kw(self, current_p_kw):
         if not isinstance(current_p_kw, float):
@@ -425,9 +417,10 @@ class BS(BaseModel):
         self.soc = 1.
 
     def change_battery(self,
-                       max_e_kwh,
-                       max_charge_p_kw,
-                       max_discharge_p_kw=None):
+                       max_e_kwh: float,
+                       max_charge_p_kw: float,
+                       max_discharge_p_kw: float = None,
+                       st_type: str = None):
         """
         Change the battery size and params.
 
@@ -435,15 +428,26 @@ class BS(BaseModel):
         ----------
         max_e_kwh : float
             Maximum energy in kWh.
-        max_p_kw : float
+        max_charge_p_kw : float
             Maximum power in kW.
+        max_discharge_p_kw : float
+            Maximum power in kW.
+        st_type : str
+            Storage type.
         """
-        self.max_e_kwh = float(max_e_kwh)
-        self.max_charge_p_kw = float(max_charge_p_kw)
-        if max_discharge_p_kw is None:
-            self.max_discharge_p_kw = float(max_charge_p_kw)
+        if st_type is not None:
+            storage_type = StorageType(st_type)
+            self.max_e_kwh = storage_type.max_e_kwh
+            self.max_charge_p_kw = storage_type.max_charge_p_kw
+            self.max_discharge_p_kw = storage_type.max_discharge_p_kw
+            self.name = storage_type.name
         else:
-            self.max_discharge_p_kw = float(max_discharge_p_kw)
+            self.max_e_kwh = float(max_e_kwh)
+            self.max_charge_p_kw = float(max_charge_p_kw)
+            if max_discharge_p_kw is None:
+                self.max_discharge_p_kw = float(max_charge_p_kw)
+            else:
+                self.max_discharge_p_kw = float(max_discharge_p_kw)
         self.hard_reset()
 
     def change_battery_by_type(self, st_type: str):
