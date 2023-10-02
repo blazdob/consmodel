@@ -134,7 +134,6 @@ class PV(BaseModel):
             dni ... direct normal irradiance
             dhi ... diffuse horizontal irradiance
         """
-        print(start, end, freq, model, self.tz)
         times = pd.date_range(start=start,
                                 end=end,
                                 freq=freq,

@@ -34,7 +34,7 @@ pip3 install consmodel
    pv = PV(lat=46.155768,
             lon=14.304951,
             alt=400,
-            id=1,
+            index=1,
             name="test",
             tz="Europe/Vienna")
    timeseries = pv.simulate(pv_size=14.,
@@ -63,7 +63,7 @@ pip3 install consmodel
 	batt = BS(lat=46.155768,
             lon=14.304951,
             alt=400,
-            id=1,
+            index=1,
             st_type="10kWh_5kW")
 	timeseries = batt.simulate(control_type="installed_power",
                               p_kw=test_consumption_df)
