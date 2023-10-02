@@ -107,26 +107,3 @@ class HP(BaseModel):
         self.results["P"] = self.results["P"]/1000
         self.timeseries = self.results["P"]
         return self.timeseries
-
-
-def get_pump_data(self, year, month, day, wanted_temp):
-        start = datetime(year, month, day)
-        end = datetime(year, month, day+1)
-
-        point = meteostat.Point(self.lat, self.lon, 400)
-        data = meteostat.Hourly(point, start, end)
-        data = data.fetch()
-        data = data.resample('15T').asfreq()
-        data['temp'] = data['temp'].interpolate()
-        data = data.iloc[:-1,:]
-        temp_data = np.array(data['temp'].values)
-
-
-        df = pd.DataFrame({'T_in_primary': temp_data, 'T_in_secondary': np.array([wanted_temp]*96)})
-        df['T_amb'] = df['T_in_primary']
-        parameters = hpl.get_parameters('Generic', group_id=1, t_in=-7, t_out=40, p_th=10000)
-        heatpump = hpl.HeatPump(parameters)
-        results = heatpump.simulate(t_in_primary=df['T_in_primary'].values, t_in_secondary=df['T_in_secondary'].values, t_amb=df['T_amb'].values, mode=1)
-        results=pd.DataFrame.from_dict(results)
-
-        return list(results['P_el']/1000)
