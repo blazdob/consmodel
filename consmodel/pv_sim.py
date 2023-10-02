@@ -461,11 +461,3 @@ class PV(BaseModel):
         self.results["P"] = self.results["P"]/1000
         self.timeseries = self.results["P"]
         return self.timeseries
-
-if __name__ == '__main__':
-    pv = PV(lat=46.155768, lon=14.304951, alt=400, id=1, name="test", tz="Europe/Vienna")
-    timeseries = pv.simulate(pv_size=14.,
-                        year=2022,
-                        freq="15min",
-                        model="ineichen",
-                        consider_cloud_cover=True)

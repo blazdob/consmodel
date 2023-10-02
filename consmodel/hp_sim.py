@@ -130,8 +130,3 @@ def get_pump_data(self, year, month, day, wanted_temp):
         results=pd.DataFrame.from_dict(results)
 
         return list(results['P_el']/1000)
-
-if __name__ == '__main__':
-    hp = HP(index=1, name="test", lat=46.155768, lon=14.304951, alt=400, tz="Europe/Vienna")
-    timeseries = hp.simulate(25,
-                              year=2022)
