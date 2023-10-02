@@ -32,10 +32,6 @@ class BS(BaseModel):
         Maximum energy in kWh.
     soc : float
         State of charge.
-    current_p_kw : float
-        Current power in kW.
-    remaining_e_kwh : float
-        Current remaining energy in kWh.
 
     Methods
     -------
@@ -361,7 +357,7 @@ class BS(BaseModel):
         self.results["var_bat"] = lst
         return self.results
 
-    def simulate(self, control_type, p_kw):
+    def simulate(self, p_kw, control_type):
         self.hard_reset()
         self.model(control_type=control_type, p_kw=p_kw)
         self.timeseries = self.results["P_after"]

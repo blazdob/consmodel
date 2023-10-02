@@ -1,4 +1,4 @@
 from consmodel.base_model import BaseModel
 
-class EV(BaseModel):
+class ConsumerModel(BaseModel):
     raise NotImplementedError
