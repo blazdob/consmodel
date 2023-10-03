@@ -1,6 +1,39 @@
 
+class GenericType:
 
-class StorageType:
+    types = {}
+
+    def __init__(self):
+        self._name = None
+
+    @property
+    def name(self):
+        return self._name
+    
+
+    def get_standard_types(self):
+        """
+        Return a list of standard types.
+        """
+        return list(self.types.keys())
+
+    def get_type(self, name):
+        """
+        Return a type object.
+        """
+        return self.types[name]
+    
+    def get_params(self):
+        """
+        Return a dictionary of parameters.
+        """
+        # get all attrs
+        attrs = [attr for attr in dir(self) if not callable(getattr(self, attr)) 
+                                                    and not attr.startswith("__") 
+                                                    and not attr.startswith("_")]
+        return attrs
+
+class StorageType(GenericType):
     """
     Storage type class.
 
@@ -19,7 +52,7 @@ class StorageType:
         - 20kWh_15kW
     """
     
-    battery_types = {
+    types = {
         "tesla_powerwall": {
             "name": "tesla_powerwall",
             "max_charge_p_kw": 5.,
@@ -72,22 +105,11 @@ class StorageType:
     def __init__(self,
                 storage_type: str = "tesla_powerwall",
                 ):
-        self._storage_type = storage_type
-        self._name = self.battery_types[storage_type]["name"]
-        self._max_charge_p_kw = self.battery_types[storage_type]["max_charge_p_kw"]
-        self._max_discharge_p_kw = self.battery_types[storage_type]["max_discharge_p_kw"]
-        self._max_e_kwh = self.battery_types[storage_type]["max_e_kwh"]
-    #__________________________________________________________________________
-    # Properties
-    #__________________________________________________________________________
-    @property
-    def storage_type(self):
-        return self._storage_type
-    
-    @property
-    def name(self):
-        return self._name
-    
+        self._name = self.types[storage_type]["name"]
+        self._max_charge_p_kw = self.types[storage_type]["max_charge_p_kw"]
+        self._max_discharge_p_kw = self.types[storage_type]["max_discharge_p_kw"]
+        self._max_e_kwh = self.types[storage_type]["max_e_kwh"]
+
     @property
     def max_charge_p_kw(self):
         return self._max_charge_p_kw
@@ -100,11 +122,65 @@ class StorageType:
     def max_e_kwh(self):
         return self._max_e_kwh
     
-    #__________________________________________________________________________
+class HPType(GenericType):
+    """
+    Heat pump type class.
 
-    def get_standard_types(self):
-        """
-        Return a list of standard storage types.
-        """
-        return list(self.battery_types.keys())
+    Attributes
+    ----------
+    hp_type : str
+        Name of the heat pump type.
+        Where the heat pump type is one of the following:
+        - Outdoor Air / Water
+        - Brine / Water
+        - Water / Water
+
+        where each can be regulated or on/off.
+    """
+    types = {
+        "Outdoor Air / Water (regulated)": {
+            "name": "Outdoor Air / Water (regulated)",
+            "group_id": 1,
+            "regulated": True
+        },
+        "Brine / Water (regulated)": {
+            "name": "Brine / Water (regulated)",
+            "group_id": 2,
+            "regulated": True
+        },
+        "Water / Water (regulated)": {
+            "name": "Water / Water (regulated)",
+            "group_id": 3,
+            "regulated": True
+        },
+        "Outdoor Air / Water (on/off)": {
+            "name": "Outdoor Air / Water (on/off)",
+            "group_id": 4,
+            "regulated": False
+        },
+        "Brine / Water (on/off)": {
+            "name": "Brine / Water (on/off)",
+            "group_id": 5,
+            "regulated": False
+        },
+        "Water / Water (on/off)": {
+            "name": "Water / Water (on/off)",
+            "group_id": 6,
+            "regulated": False
+        },
+    }
+
+    def __init__(self,
+                hp_type: str = "Outdoor Air / Water (regulated)",
+                ):
+        self._name = self.types[hp_type]["name"]
+        self._group_id = self.types[hp_type]["group_id"]
+        self._regulated = self.types[hp_type]["regulated"]
+
+    @property
+    def group_id(self):
+        return self._group_id
     
+    @property
+    def regulated(self):
+        return self._regulated
