@@ -5,3 +5,4 @@ numpy>=1.22.4
 tzfpy>=0.15.1
 meteostat>=1.6.5
 scipy>=1.10.0
+hplib==1.9
