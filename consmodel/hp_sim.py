@@ -39,12 +39,13 @@ class HP(BaseModel):
                 name: str = "HP_default",
                 tz: str = None,
                 use_utc: bool = False,
-                st_type: str = None,):
+                st_type: str = None,
+                st_subtype: str = None,):
         super().__init__(index, lat, lon, alt, name, tz, use_utc)
-        if st_type is None:
+        if st_subtype is None:
             self.hp_type = HPType()
         else:
-            self.hp_type = HPType(st_type)
+            self.hp_type = HPType(st_subtype)
         
     def model(self,
             wanted_temp: float,
@@ -60,7 +61,7 @@ class HP(BaseModel):
 
         """
 
-        parameters = hpl.get_parameters(hp_type, group_id=1, t_in=-7, t_out=40, p_th=10000)
+        parameters = hpl.get_parameters(hp_type, group_id=hp_subtype, t_in=-7, t_out=40, p_th=10000)
         hp = hpl.HeatPump(parameters)
         results = hp.simulate(t_in_primary=self.results['temp'].values,
                             t_in_secondary=np.array([wanted_temp]*len(self.results)),
@@ -79,6 +80,7 @@ class HP(BaseModel):
     def simulate(self,
                 wanted_temp: float,
                 hp_type: str = "Generic",
+                hp_subtype: str = "Outdoor Air / Water (regulated)",
                 start: datetime = None,
                 end: datetime = None,
                 year: int = 2022,
@@ -109,8 +111,26 @@ class HP(BaseModel):
             start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
             end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
         self.get_weather_data(start, end, freq)
-        self.model(wanted_temp, hp_type)
+        hp_subtype_id = self.hp_type.types[hp_subtype]["group_id"]
+        print(hp_subtype_id)
+        self.model(wanted_temp, hp_type, hp_subtype_id)
         self.results.rename(columns={"P_el": "P"}, inplace=True)
         self.results["P"] = self.results["P"]/1000
         self.timeseries = self.results["P"]
         return self.timeseries
+    
+if __name__ == '__main__':
+    hp = HP(lat=46.155768,
+            lon=14.304951,
+            alt=400,
+            index=1,
+            st_type="Generic",
+            st_subtype="Outdoor Air / Water (regulated)")
+    timeseries = hp.simulate(wanted_temp=45,
+                            hp_type="Generic",
+                            hp_subtype="Outdoor Air / Water (regulated)",
+                            year = 2022,)
+    print(timeseries)
+    import matplotlib.pyplot as plt
+    print(timeseries.sum())
+    plt.show()

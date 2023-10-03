@@ -133,6 +133,14 @@ class BS(BaseModel):
     def name(self, name):
         self._name = name
 
+    @soc.setter
+    def soc(self, soc):
+        if not isinstance(soc, float):
+            raise TypeError("SOC has to be a float.")
+        if soc < 0 or soc > 1:
+            raise ValueError("SOC has to be between 0 and 1.")
+        self._soc = soc
+
     @max_charge_p_kw.setter
     def max_charge_p_kw(self, max_charge_p_kw):
         if not isinstance(max_charge_p_kw, float):
