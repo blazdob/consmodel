@@ -56,12 +56,16 @@ class BS(BaseModel):
                  soc: float = 1.,
                  ):
         super().__init__(index, lat, lon, alt, name, tz, use_utc)
+
         if st_type is None:
             self._index = index
             self._name = name
-            self._max_charge_p_kw = max_charge_p_kw
-            self._max_discharge_p_kw = max_discharge_p_kw
-            self._max_e_kwh = max_e_kwh
+            self._max_e_kwh = float(max_e_kwh)
+            self._max_charge_p_kw = float(max_charge_p_kw)
+            if max_discharge_p_kw is None:
+                self.max_discharge_p_kw = float(max_charge_p_kw)
+            else:
+                self.max_discharge_p_kw = float(max_discharge_p_kw)
         else:
             storage_type = StorageType(st_type)
             self._index = index
@@ -435,19 +439,19 @@ class BS(BaseModel):
         st_type : str
             Storage type.
         """
-        if st_type is not None:
-            storage_type = StorageType(st_type)
-            self.max_e_kwh = storage_type.max_e_kwh
-            self.max_charge_p_kw = storage_type.max_charge_p_kw
-            self.max_discharge_p_kw = storage_type.max_discharge_p_kw
-            self.name = storage_type.name
-        else:
+        if st_type is None:
             self.max_e_kwh = float(max_e_kwh)
             self.max_charge_p_kw = float(max_charge_p_kw)
             if max_discharge_p_kw is None:
                 self.max_discharge_p_kw = float(max_charge_p_kw)
             else:
                 self.max_discharge_p_kw = float(max_discharge_p_kw)
+        else:
+            storage_type = StorageType(st_type)
+            self.max_e_kwh = storage_type.max_e_kwh
+            self.max_charge_p_kw = storage_type.max_charge_p_kw
+            self.max_discharge_p_kw = storage_type.max_discharge_p_kw
+            self.name = storage_type.name
         self.hard_reset()
 
     def change_battery_by_type(self, st_type: str):

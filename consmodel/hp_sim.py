@@ -3,6 +3,7 @@ import hplib.hplib as hpl
 import pandas as pd
 import numpy as np
 
+from consmodel.utils.st_types import HPType
 from consmodel.base_model import BaseModel
 
 class HP(BaseModel):
@@ -37,12 +38,18 @@ class HP(BaseModel):
                 index: int = 0,
                 name: str = "HP_default",
                 tz: str = None,
-                use_utc: bool = False,):
+                use_utc: bool = False,
+                st_type: str = None,):
         super().__init__(index, lat, lon, alt, name, tz, use_utc)
-
+        if st_type is None:
+            self.hp_type = HPType()
+        else:
+            self.hp_type = HPType(st_type)
+        
     def model(self,
             wanted_temp: float,
-            hp_type: str = "Generic"):
+            hp_type: str = "Generic",
+            hp_subtype: str = "Outdoor Air / Water (regulated)"):
         """
         Apply the heat pump model to the weather data.
 
@@ -52,6 +59,7 @@ class HP(BaseModel):
             Wanted temperature of the heat pump.
 
         """
+
         parameters = hpl.get_parameters(hp_type, group_id=1, t_in=-7, t_out=40, p_th=10000)
         hp = hpl.HeatPump(parameters)
         results = hp.simulate(t_in_primary=self.results['temp'].values,
