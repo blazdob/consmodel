@@ -101,8 +101,8 @@ class HP(BaseModel):
 
         Returns
         -------
-        list
-            List of the simulated power values in kW.
+        pd.Series
+            pd.Series of the simulated power values in kW.
 
         """
         if (start is None) or (end is None):
