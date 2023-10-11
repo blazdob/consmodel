@@ -35,16 +35,15 @@ pip3 install consmodel
 
    # create a simple PV model
    pv = PV(lat=46.155768,
-            lon=14.304951,
-            alt=400,
-            index=1,
-            name="test",
-            tz="Europe/Vienna")
+           lon=14.304951,
+           alt=400,
+           index=1,
+           name="test")
    timeseries = pv.simulate(pv_size=14.,
-       exit()           year=2022,
-                  freq="15min",
-                  model="ineichen",
-                  consider_cloud_cover=True)
+                            year=2022,
+                            freq="15min",
+                            model="ineichen",
+                            consider_cloud_cover=True)
    # plot the results
    timeseries.plot()
    plt.show()
@@ -64,10 +63,10 @@ pip3 install consmodel
                                        periods=11,
                                        freq="15min"))
 	batt = BS(lat=46.155768,
-            lon=14.304951,
-            alt=400,
-            index=1,
-            st_type="10kWh_5kW")
+             lon=14.304951,
+             alt=400,
+             index=1,
+             st_type="10kWh_5kW")
 	timeseries = batt.simulate(control_type="installed_power",
                               p_kw=test_consumption_df)
    # plot the results
