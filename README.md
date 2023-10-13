@@ -58,7 +58,7 @@ pip3 install consmodel
 
    # create a simple PV model
    test_consumption = [0.,-3.,-2.,8.,7.,6.,7.,8.,5.,4.,-2.]
-   test_consumption_df = pd.DataFrame({"P": test_consumption},
+   test_consumption_df = pd.DataFrame({"p": test_consumption},
                   index=pd.date_range("2020-01-01 06:00:00",
                                        periods=11,
                                        freq="15min"))

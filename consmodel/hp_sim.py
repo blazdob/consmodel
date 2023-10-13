@@ -114,9 +114,9 @@ class HP(BaseModel):
         hp_subtype_id = self.hp_type.types[hp_subtype]["group_id"]
         print(hp_subtype_id)
         self.model(wanted_temp, hp_type, hp_subtype_id)
-        self.results.rename(columns={"P_el": "P"}, inplace=True)
-        self.results["P"] = self.results["P"]/1000
-        self.timeseries = self.results["P"]
+        self.results.rename(columns={"P_el": "p"}, inplace=True)
+        self.results["p"] = self.results["p"]/1000
+        self.timeseries = self.results["p"]
         return self.timeseries
     
 if __name__ == '__main__':

@@ -7,7 +7,7 @@ class TestBS(unittest.TestCase):
     def test_result(self):
         # create a simple PV model
         test_consumption = [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]
-        test_consumption_df = pd.DataFrame({"P": test_consumption},
+        test_consumption_df = pd.DataFrame({"p": test_consumption},
                         index=pd.date_range("2020-01-01 06:00:00",
                                             periods=17,
                                             freq="15min"))
@@ -27,7 +27,7 @@ class TestBS(unittest.TestCase):
                     alt=400,
                     index=1,
                     st_type="10kWh_5kW")
-        test_data = pd.DataFrame({"P": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]},
+        test_data = pd.DataFrame({"p": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]},
                                     index=pd.date_range("2020-01-01 06:00:00",
                                     periods=17,
                                     freq="15min"))
@@ -44,7 +44,7 @@ class TestBS(unittest.TestCase):
                     alt=400,
                     index=1,
                     st_type="10kWh_5kW")
-        test_data = pd.DataFrame({"P": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]}, index=pd.date_range("2020-01-01 06:00:00", periods=17, freq="15min"))
+        test_data = pd.DataFrame({"p": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]}, index=pd.date_range("2020-01-01 06:00:00", periods=17, freq="15min"))
         timeseries = batt.simulate(control_type="production_saving",
                             p_kw=test_data)
         p_after_result = [0., -3., -2., 3., 2., 1., 2., 3., 0., 0., 0., 0., 0., 0., 0., 0., 0.]

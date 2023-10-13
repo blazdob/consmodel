@@ -456,7 +456,7 @@ class PV(BaseModel):
         self.get_irradiance_data(start, end, freq, model)
         self.get_weather_data(start, end, freq)
         self.model(pv_size*1000, consider_cloud_cover, tilt, orient)
-        self.results.rename(columns={"p_mp": "P"}, inplace=True)
-        self.results["P"] = self.results["P"]/1000
-        self.timeseries = self.results["P"]
+        self.results.rename(columns={"p_mp": "p"}, inplace=True)
+        self.results["p"] = self.results["p"]/1000
+        self.timeseries = self.results["p"]
         return self.timeseries

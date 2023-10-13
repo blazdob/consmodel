@@ -248,7 +248,7 @@ class BS(BaseModel):
         p_kw : pd.DataFrame()
             Power in kW in 15 min intervals where the index is the timestamp.
             in a format:
-            |      Timestamp      |     P      |
+            |      Timestamp      |     p      |
             |---------------------|------------|
             | 2020-01-01 00:00:00 |    0.0     |
             | 2020-01-01 00:15:00 |    0.0     |
@@ -264,11 +264,11 @@ class BS(BaseModel):
         if control_type == "production_saving":
             for key, df_tmp in self.results.iterrows():
                 # we have some consumption
-                if df_tmp.P > 0:
+                if df_tmp.p > 0:
                     # if battery is not empty
                     if self.current_e_kwh > 0:
-                        if self.current_e_kwh - 0.25*df_tmp.P > 0:
-                            self.discharge_amount = float(min(df_tmp.P,
+                        if self.current_e_kwh - 0.25*df_tmp.p > 0:
+                            self.discharge_amount = float(min(df_tmp.p,
                                                               self.max_discharge_p_kw))
                         # Battery does not have enought energy to
                         # discharge at full power for the next 15 min
@@ -283,8 +283,8 @@ class BS(BaseModel):
                 # we have some production
                 else:
                     # we can charge the battery at full capacity
-                    if (self.current_e_kwh - 0.25*df_tmp.P) < self.max_e_kwh:
-                        self.charge_amount = min(df_tmp.P*(-1), self.max_charge_p_kw)
+                    if (self.current_e_kwh - 0.25*df_tmp.p) < self.max_e_kwh:
+                        self.charge_amount = min(df_tmp.p*(-1), self.max_charge_p_kw)
                     else:
                         self.charge_amount = min(4*(self.max_e_kwh - self.current_e_kwh),
                                                  self.max_charge_p_kw)
@@ -296,10 +296,10 @@ class BS(BaseModel):
             self.curr_limit = p_limit
             self.hard_reset()
             for key, df_tmp in self.results.iterrows():
-                if df_tmp.P > p_limit:
+                if df_tmp.p > p_limit:
                     if self.current_e_kwh > 0:
                         # if battery is not empty
-                        self.discharge_amount = float(min(df_tmp.P - p_limit,
+                        self.discharge_amount = float(min(df_tmp.p - p_limit,
                                                           self.max_discharge_p_kw))
                         if self.current_e_kwh < self.discharge_amount*0.25:
                             self.discharge_amount = self.current_e_kwh*4
@@ -310,7 +310,7 @@ class BS(BaseModel):
                         pass
                 # charging battery
                 else:
-                    excess_power = p_limit - df_tmp.P
+                    excess_power = p_limit - df_tmp.p
                     if self.current_e_kwh < self._max_e_kwh:
                         self.charge_amount = min(excess_power, self.max_charge_p_kw)
                         if self.current_e_kwh + self.charge_amount*0.25 > self._max_e_kwh:
@@ -357,7 +357,7 @@ class BS(BaseModel):
                 self.results.loc[key, "battery_plus"] = self.discharge_amount
                 self.results.loc[key, "battery_minus"] = -self.charge_amount
 
-        self.results["P_after"] = self.results.P - self.results.battery_plus - self.results.battery_minus
+        self.results["P_after"] = self.results.p - self.results.battery_plus - self.results.battery_minus
         self.results["var_bat"] = lst
         return self.results
 
@@ -373,14 +373,14 @@ class BS(BaseModel):
         """
         for _, df_tmp in self.results.iterrows():
             # lower the peak
-            if df_tmp.P > p_limit:
+            if df_tmp.p > p_limit:
                 # if battery is not empty
                 if self.current_e_kwh >= 0:
-                    if df_tmp.P - p_limit > self.max_discharge_p_kw:
+                    if df_tmp.p - p_limit > self.max_discharge_p_kw:
                         # not enough max output
                         return -1
                     # Lower te peak till p_limit
-                    needed_output = float(df_tmp.P - p_limit)
+                    needed_output = float(df_tmp.p - p_limit)
                     if self.current_e_kwh < needed_output*0.25:
                         # not enough energy
                         return -1
@@ -391,7 +391,7 @@ class BS(BaseModel):
                     return -1
             else:
                 # excess power to charge the battery
-                diff = p_limit - df_tmp.P
+                diff = p_limit - df_tmp.p
                 self.charge_amount = float(min(diff, self.max_charge_p_kw))
                 if self.current_e_kwh < self.max_e_kwh:
                     if self.current_e_kwh + self.charge_amount*0.25 > self.max_e_kwh:
@@ -405,7 +405,7 @@ class BS(BaseModel):
         """
         Function calculates the optimal limit of the maximum power
         """
-        max_bound = self.results.P.max()
+        max_bound = self.results.p.max()
         function = self.is_p_limit_posible
         root = optimize.bisect(function,
                                max_bound-self.max_discharge_p_kw-1,
