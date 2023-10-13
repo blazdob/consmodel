@@ -15,7 +15,8 @@ class TestBS(unittest.TestCase):
                     lon=14.304951,
                     alt=400,
                     index=1,
-                    st_type="10kWh_5kW")
+                    st_type="10kWh_5kW",
+                    freq="15min",)
         timeseries = batt.simulate(control_type="installed_power",
                                 p_kw=test_consumption_df)
         self.assertEqual([0.0, -3.0, -2.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0],timeseries.values.tolist())
@@ -26,7 +27,8 @@ class TestBS(unittest.TestCase):
                     lon=14.304951,
                     alt=400,
                     index=1,
-                    st_type="10kWh_5kW")
+                    st_type="10kWh_5kW",
+                    freq="15min",)
         test_data = pd.DataFrame({"p": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]},
                                     index=pd.date_range("2020-01-01 06:00:00",
                                     periods=17,
@@ -43,7 +45,8 @@ class TestBS(unittest.TestCase):
                     lon=14.304951,
                     alt=400,
                     index=1,
-                    st_type="10kWh_5kW")
+                    st_type="10kWh_5kW",
+                    freq="15min",)
         test_data = pd.DataFrame({"p": [0.,-3.,-2.,8.,7.,6.,7.,8.,3.,5.,4.,-2.,0.,2.,0.,0.,0.]}, index=pd.date_range("2020-01-01 06:00:00", periods=17, freq="15min"))
         timeseries = batt.simulate(control_type="production_saving",
                             p_kw=test_data)

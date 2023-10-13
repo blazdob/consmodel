@@ -54,8 +54,8 @@ class BS(BaseModel):
                  max_discharge_p_kw: float = 1.,
                  max_e_kwh: float = 1.,
                  soc: float = 1.,
-                 ):
-        super().__init__(index, lat, lon, alt, name, tz, use_utc)
+                 freq: str = "15min",):
+        super().__init__(index, lat, lon, alt, name, tz, use_utc, freq)
 
         if st_type is None:
             self._index = index

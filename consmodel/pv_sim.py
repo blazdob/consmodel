@@ -51,7 +51,7 @@ class PV(BaseModel):
         Returns a pandas dataframe with the columns about the weather data.
     * model(self, pv_size, pv_efficiency, pv_azimuth, pv_tilt, pv_type)
         Returns a pandas dataframe with the columns about the solar model.
-    * simulate(self,pv_size,start,end,freq,model,consider_cloud_cover,tilt,orient)
+    * simulate(self,pv_size,start,end,model,consider_cloud_cover,tilt,orient)
         Returns a pandas dataframe with the columns about the simulation and
         all the results of the simulation.
     """
@@ -62,8 +62,9 @@ class PV(BaseModel):
                 index: int = 0,
                 name: str = "PV_default",
                 tz: str = None,
-                use_utc: bool = False,):
-        super().__init__(index, lat, lon, alt, name, tz, use_utc)
+                use_utc: bool = False,
+                freq: str = "15min",):
+        super().__init__(index, lat, lon, alt, name, tz, use_utc, freq)
         self._location = Location(lat,
                     lon,
                     tz=self._tz,
@@ -127,7 +128,6 @@ class PV(BaseModel):
             'altitude'      ... float,
             'start_date'    ... datetime,
             'end_date'      ... datetime,
-            'freq'          ... str,
 
         OUTPUT:
             ghi ... global horizontal irradiance
@@ -136,7 +136,7 @@ class PV(BaseModel):
         """
         times = pd.date_range(start=start,
                                 end=end,
-                                freq=freq,
+                                freq=self.freq,
                                 tz=self.tz)
         # ineichen with climatology table by default
         cs = self.location.get_clearsky(times, model=model)[:]
@@ -152,11 +152,11 @@ class PV(BaseModel):
         return self.results
 
     def model(self,
-            pv_size: float = 0.,
-            consider_cloud_cover: bool = False,
-            tilt: int = 35,
-            orient: int = 180,
-            pv_efficiency: float = 1100.,):
+              pv_size: float = 0.,
+              consider_cloud_cover: bool = False,
+              tilt: int = 35,
+              orient: int = 180,
+              pv_efficiency: float = 1100.,):
         """
         INPUT:
         Function takes metadata dictionary as an input and includes the following keys:
@@ -237,7 +237,7 @@ class PV(BaseModel):
 
     # @classmethod
     def pvefficiency_adr(self, effective_irradiance, temp_cell,
-                     k_a, k_d, tc_d, k_rs, k_rsh):
+                         k_a, k_d, tc_d, k_rs, k_rsh):
         """
         Calculate PV module efficiency using the ADR model.
         The efficiency varies with irradiance and operating temperature
@@ -425,22 +425,20 @@ class PV(BaseModel):
             return popt
 
     def simulate(self,
-                pv_size: float,
-                start: datetime = None,
-                end: datetime = None,
-                year: int = 2022,
-                freq: str = "15min",
-                model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
-                consider_cloud_cover: bool = False,
-                tilt: int = 35,
-                orient: int = 180,):
+                 pv_size: float,
+                 start: datetime = None,
+                 end: datetime = None,
+                 year: int = 2022,
+                 model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
+                 consider_cloud_cover: bool = False,
+                 tilt: int = 35,
+                 orient: int = 180,):
         """
         INPUT:
         Function takes metadata dictionary as an input and includes the following keys:
             'pv_size' ... float in kW,
             'start' ... datetime,
             'end' ... datetime,
-            'freq' ... str,
             'model' ... str,
             'consider_cloud_cover' ... bool,
             'tilt' ... float,
@@ -453,8 +451,8 @@ class PV(BaseModel):
                 raise ValueError("Year must be provided if start and end are not.")
             start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
             end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
-        self.get_irradiance_data(start, end, freq, model)
-        self.get_weather_data(start, end, freq)
+        self.get_irradiance_data(start, end, self.freq, model)
+        self.get_weather_data(start, end, self.freq)
         self.model(pv_size*1000, consider_cloud_cover, tilt, orient)
         self.results.rename(columns={"p_mp": "p"}, inplace=True)
         self.results["p"] = self.results["p"]/1000

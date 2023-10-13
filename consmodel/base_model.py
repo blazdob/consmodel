@@ -14,14 +14,7 @@ class BaseModel(ABC):
     A base class for all models
     """
     @abstractmethod
-    def __init__(self,
-                 index,
-                 lat,
-                 lon,
-                 alt,
-                 name,
-                 tz,
-                 use_utc):
+    def __init__(self, index, lat, lon, alt, name, tz, use_utc, freq):
         self._index = index
         self._name = name
         if tz is None:
@@ -34,6 +27,7 @@ class BaseModel(ABC):
         self._lat = lat
         self._lon = lon
         self._alt = alt
+        self._freq = freq
 
         self.timeseries = None
         self.results = pd.DataFrame()
@@ -53,10 +47,6 @@ class BaseModel(ABC):
     def name(self):
         return self._name
 
-    @name.setter
-    def name(self, name):
-        self._name = name
-
     @property
     def lat(self):
         return self._lat
@@ -72,6 +62,22 @@ class BaseModel(ABC):
     @property
     def tz(self):
         return self._tz
+    
+    @property
+    def freq(self):
+        return self._freq
+
+    @property
+    def lat_lon_alt(self):
+        return (self._lat, self._lon, self._alt)
+
+    @name.setter
+    def name(self, name):
+        self._name = name
+
+    @index.setter
+    def index(self, index):
+        self._index = index
 
     @tz.setter
     def tz(self, tz):
@@ -80,9 +86,9 @@ class BaseModel(ABC):
         else:
             self._tz = tz
 
-    @property
-    def lat_lon_alt(self):
-        return (self._lat, self._lon, self._alt)
+    @freq.setter
+    def freq(self, freq):
+        self._freq = freq
 
     @lat_lon_alt.setter
     def lat_lon_alt(self, lat_lon_alt):
@@ -107,18 +113,13 @@ class BaseModel(ABC):
 
     def get_weather_data(self,
                          start: datetime = None,
-                         end: datetime = None,
-                         freq: str = "15min"):
+                         end: datetime = None,):
         """
         INPUT:
         Function takes metadata dictionary as an input and
         includes the following keys:
-            'latitude'      ... float,
-            'longitude'     ... float,
-            'altitude'      ... float,
-            'start_date'    ... datetime,
-            'end_date'      ... datetime,
-            'freq'          ... str,
+            'start'         ... datetime,
+            'end'           ... datetime,
         OUTPUT:
             weather_data ... pandas dataframe with
             weather data that includesthe following columns:
@@ -141,7 +142,7 @@ class BaseModel(ABC):
                               self.tz)
         weather_data = weather_data.fetch()
         weather_data = weather_data.iloc[:-1]
-        weather_data = weather_data.resample(freq) \
+        weather_data = weather_data.resample(self.freq) \
                                    .mean() \
                                    .interpolate(method='linear')
         self.results = pd.concat([self.results, weather_data], axis=1)

@@ -11,10 +11,10 @@ class TestPV(unittest.TestCase):
                     alt=400,
                     index=1,
                     name="test",
-                    tz="Europe/Vienna")
+                    tz="Europe/Vienna",
+                    freq="15min",)
         timeseries = pv.simulate(pv_size=14.,
                                 year=2022,
-                                freq="15min",
                                 model="ineichen",
                                 consider_cloud_cover=True)
         self.assertEqual(len(timeseries), 35040)

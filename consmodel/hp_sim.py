@@ -40,12 +40,12 @@ class HP(BaseModel):
                 tz: str = None,
                 use_utc: bool = False,
                 st_type: str = None,
-                st_subtype: str = None,):
-        super().__init__(index, lat, lon, alt, name, tz, use_utc)
-        if st_subtype is None:
+                freq: str = "15min",):
+        super().__init__(index, lat, lon, alt, name, tz, use_utc, freq)
+        if st_type is None:
             self.hp_type = HPType()
         else:
-            self.hp_type = HPType(st_subtype)
+            self.hp_type = HPType(st_type)
         
     def model(self,
             wanted_temp: float,
@@ -79,12 +79,10 @@ class HP(BaseModel):
 
     def simulate(self,
                 wanted_temp: float,
-                hp_type: str = "Generic",
-                hp_subtype: str = "Outdoor Air / Water (regulated)",
+                hp_type: str = "Outdoor Air / Water (regulated)",
                 start: datetime = None,
                 end: datetime = None,
-                year: int = 2022,
-                freq: str = "15min"):
+                year: int = 2022,):
         """
         Simulate the heat pump for a given day.
 
@@ -110,10 +108,9 @@ class HP(BaseModel):
                 raise ValueError("Year must be provided if start and end are not.")
             start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
             end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
-        self.get_weather_data(start, end, freq)
-        hp_subtype_id = self.hp_type.types[hp_subtype]["group_id"]
-        print(hp_subtype_id)
-        self.model(wanted_temp, hp_type, hp_subtype_id)
+        self.get_weather_data(start, end, self.freq)
+        hp_type_id = self.hp_type.types[hp_type]["group_id"]
+        self.model(wanted_temp, "Generic", hp_type_id)
         self.results.rename(columns={"P_el": "p"}, inplace=True)
         self.results["p"] = self.results["p"]/1000
         self.timeseries = self.results["p"]
@@ -124,8 +121,7 @@ if __name__ == '__main__':
             lon=14.304951,
             alt=400,
             index=1,
-            st_type="Generic",
-            st_subtype="Outdoor Air / Water (regulated)")
+            st_type="Outdoor Air / Water (regulated)")
     timeseries = hp.simulate(wanted_temp=45,
                             hp_type="Generic",
                             hp_subtype="Outdoor Air / Water (regulated)",
