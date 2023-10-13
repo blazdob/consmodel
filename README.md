@@ -1,6 +1,5 @@
 # Welcome to consmodel library 👋
 
-![pypi](https://img.shields.io/pypi/v/pybadges.svg)
 ![Python Version](https://img.shields.io/badge/3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11-blue)
 
 !!! Warning: the library is active and the functionalities are being added on weekly basis, some functionalities will also change !!!
