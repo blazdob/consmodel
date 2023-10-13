@@ -16,6 +16,8 @@ The library is a centralised modelling tool that implements the following consum
 
 The main idea of the library is to be able to easily create consumption or generation power consumption profiles.
 
+The schema of the library is as follows:
+![](imgs/diagram.png)
 ### 🏠 [Homepage](https://github.com/blazdob/consmodel)
 
 ## Install
