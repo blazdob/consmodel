@@ -45,13 +45,13 @@ class PV(BaseModel):
         Returns True if the PV model objects are equal, False otherwise.
     * __hash__(self)
         Returns a hash value for the PV model object.
-    * get_irradiance_data(self, start end freq)
+    * get_irradiance_data(self, start, end)
         Returns a pandas dataframe with the columns about the irradiance data.
-    * get_weather_data(self, start end freq)
+    * get_weather_data(self, start, end)
         Returns a pandas dataframe with the columns about the weather data.
     * model(self, pv_size, pv_efficiency, pv_azimuth, pv_tilt, pv_type)
         Returns a pandas dataframe with the columns about the solar model.
-    * simulate(self,pv_size,start,end,model,consider_cloud_cover,tilt,orient)
+    * simulate(self, pv_size, start, end, model, consider_cloud_cover, tilt, orient)
         Returns a pandas dataframe with the columns about the simulation and
         all the results of the simulation.
     """
@@ -117,7 +117,6 @@ class PV(BaseModel):
     def get_irradiance_data(self,
                             start: datetime = None,
                             end: datetime = None,
-                            freq: str = "15min",
                             model: str = 'ineichen'):
         """
 
@@ -428,31 +427,47 @@ class PV(BaseModel):
                  pv_size: float,
                  start: datetime = None,
                  end: datetime = None,
+                 freq: str = None,
                  year: int = 2022,
                  model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
                  consider_cloud_cover: bool = False,
                  tilt: int = 35,
                  orient: int = 180,):
         """
-        INPUT:
-        Function takes metadata dictionary as an input and includes the following keys:
-            'pv_size' ... float in kW,
-            'start' ... datetime,
-            'end' ... datetime,
-            'model' ... str,
-            'consider_cloud_cover' ... bool,
-            'tilt' ... float,
-            'orient' ... float,
-        OUTPUT:
-            results ... series with results of output power of the pv array in kW
+        Simulate the heat pump for a given time period.
+
+        Parameters
+        ----------
+        pv_size : float
+            Size of the PV in kW.
+        start : datetime
+            Start of the simulation.
+        end : datetime
+            End of the simulation.
+        freq : str
+            Frequency of the simulation.
+        year : int
+            Year of the simulation.
+        model : str
+            Model of the simulation.
+        consider_cloud_cover : bool
+            Consider cloud cover or not.
+
+        Returns
+        -------
+        pd.Series
+            pd.Series of the simulated power values in kW.
         """
+        if freq is not None:
+            self.freq = freq
+
         if (start is None) or (end is None):
             if year is None:
                 raise ValueError("Year must be provided if start and end are not.")
             start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
             end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
-        self.get_irradiance_data(start, end, self.freq, model)
-        self.get_weather_data(start, end, self.freq)
+        self.get_irradiance_data(start, end, model)
+        self.get_weather_data(start, end)
         self.model(pv_size*1000, consider_cloud_cover, tilt, orient)
         self.results.rename(columns={"p_mp": "p"}, inplace=True)
         self.results["p"] = self.results["p"]/1000

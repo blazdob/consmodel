@@ -357,14 +357,14 @@ class BS(BaseModel):
                 self.results.loc[key, "battery_plus"] = self.discharge_amount
                 self.results.loc[key, "battery_minus"] = -self.charge_amount
 
-        self.results["P_after"] = self.results.p - self.results.battery_plus - self.results.battery_minus
+        self.results["p_after"] = self.results.p - self.results.battery_plus - self.results.battery_minus
         self.results["var_bat"] = lst
         return self.results
 
     def simulate(self, p_kw, control_type):
         self.hard_reset()
         self.model(control_type=control_type, p_kw=p_kw)
-        self.timeseries = self.results["P_after"]
+        self.timeseries = self.results["p_after"]
         return self.timeseries
 
     def is_p_limit_posible(self, p_limit):

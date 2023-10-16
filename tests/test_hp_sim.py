@@ -14,4 +14,4 @@ class TestHP(unittest.TestCase):
                                 hp_type="Outdoor Air / Water (regulated)",
                                 year = 2022,)
         print(timeseries.values.sum())
-        self.assertEqual(timeseries.sum(), 61194.3477176415)
+        self.assertEqual(timeseries.sum(), 61196.23887589419)

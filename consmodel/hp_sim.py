@@ -79,23 +79,29 @@ class HP(BaseModel):
 
     def simulate(self,
                 wanted_temp: float,
-                hp_type: str = "Outdoor Air / Water (regulated)",
                 start: datetime = None,
                 end: datetime = None,
-                year: int = 2022,):
+                freq: str = None,
+                year: int = 2022,
+                hp_type: str = "Outdoor Air / Water (regulated)",
+                ):
         """
-        Simulate the heat pump for a given day.
+        Simulate the heat pump for a given time period.
 
         Parameters
         ----------
-        year : int
-            Year of the simulation.
-        month : int
-            Month of the simulation.
-        day : int
-            Day of the simulation.
         wanted_temp : float
             Wanted temperature of the heat pump.
+        start : datetime
+            Start of the simulation.
+        end : datetime
+            End of the simulation.
+        freq : str
+            Frequency of the simulation.
+        year : int
+            Year of the simulation.
+        hp_type : str
+            Heat pump type.
 
         Returns
         -------
@@ -103,12 +109,14 @@ class HP(BaseModel):
             pd.Series of the simulated power values in kW.
 
         """
+        if freq is not None:
+            self.freq = freq
         if (start is None) or (end is None):
             if year is None:
                 raise ValueError("Year must be provided if start and end are not.")
             start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
             end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
-        self.get_weather_data(start, end, self.freq)
+        self.get_weather_data(start, end)
         hp_type_id = self.hp_type.types[hp_type]["group_id"]
         self.model(wanted_temp, "Generic", hp_type_id)
         self.results.rename(columns={"P_el": "p"}, inplace=True)
