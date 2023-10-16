@@ -150,6 +150,23 @@ class BaseModel(ABC):
             raise ValueError('Frequency must be 10min, 15min, 30min or 60min')
         return freq_mins
     
+    def handle_time_format(self, freq, start, end, year):
+        if freq is not None:
+            self.freq = freq
+
+        if (start is None) or (end is None):
+            if year is None:
+                raise ValueError("Year must be provided if start and end are not.")
+            start = pd.to_datetime(f"{year}-01-01 00:15:00")
+            end = pd.to_datetime(f"{year+1}-01-01 00:00:00")
+        # handle rounding to nearest interval of freq
+        self.freq_mins = self.get_freq_mins(self.freq)
+        if start.minute % self.freq_mins != 0:
+            start = start + pd.Timedelta(minutes=self.freq_mins - start.minute % self.freq_mins)
+        if end.minute % self.freq_mins != 0:
+            end = end - pd.Timedelta(minutes=end.minute % self.freq_mins)
+        return start, end
+    
     def get_weather_data(self,
                          start: datetime = None,
                          end: datetime = None,):

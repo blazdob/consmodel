@@ -108,13 +108,7 @@ class HP(BaseModel):
             pd.Series of the simulated power values in kW.
 
         """
-        if freq is not None:
-            self.freq = freq
-        if (start is None) or (end is None):
-            if year is None:
-                raise ValueError("Year must be provided if start and end are not.")
-            start = pd.to_datetime(f"{year}-01-01 00:15:00")
-            end = pd.to_datetime(f"{year+1}-01-01 00:00:00")
+        start, end = self.handle_time_format(freq, start, end, year)
         self.get_weather_data(start, end)
         hp_type_id = self.hp_type.types[hp_type]["group_id"]
         self.model(wanted_temp, "Generic", hp_type_id)

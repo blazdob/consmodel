@@ -150,6 +150,7 @@ class ConsumerModel(BaseModel):
         self.model(has_generic_consumption=has_generic_consumption,
                    start=start,
                    end=end,
+                   freq=freq,
                    year=year,)
         # then simulate the submodels and add the results (in the following order: PV, HP, EV, ... , BS)
         if has_pv:
@@ -273,31 +274,20 @@ class ConsumerModel(BaseModel):
               has_generic_consumption: bool = False,
               start: datetime = None,
               end: datetime = None,
+              freq: str = None,
               year: int = None,
               ):
-        # create dataframe with start, end and self.freq or year
-        if (start is None) or (end is None):
-            if year is None:
-                raise ValueError("Year must be provided if start and end are not.")
-            start = pd.to_datetime(f"{year}-01-01 00:15:00")
-            end = pd.to_datetime(f"{year+1}-01-01 00:00:00")
-        # handle rounding to nearest interval of freq
-        self.freq_mins = self.get_freq_mins(self.freq)
-        if start.minute % self.freq_mins != 0:
-            start = start + pd.Timedelta(minutes=self.freq_mins - start.minute % self.freq_mins)
-        if end.minute % self.freq_mins != 0:
-            end = end - pd.Timedelta(minutes=end.minute % self.freq_mins)
+        start, end = self.handle_time_format(freq, start, end, year)
 
         if has_generic_consumption:
+            warnings.warn("generic consumption is not implemented yet.")
             self.results["p"] = self.generic_consumption(start=start,
-                                                         end=end,
-                                                         year=year,)
+                                                         end=end,)
         else:
             self.results["p"] = pd.Series(data=0, index=pd.date_range(start=start, end=end, freq=self.freq, tz=self.tz))
 
     def generic_consumption(self,
                             start: datetime = None,
-                            end: datetime = None,
-                            year: int = None,):
+                            end: datetime = None,):
         series = pd.Series(data=0, index=pd.date_range(start=start, end=end, freq=self.freq, tz=self.tz))
         return series

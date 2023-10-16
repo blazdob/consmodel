@@ -457,20 +457,7 @@ class PV(BaseModel):
         pd.Series
             pd.Series of the simulated power values in kW.
         """
-        if freq is not None:
-            self.freq = freq
-
-        if (start is None) or (end is None):
-            if year is None:
-                raise ValueError("Year must be provided if start and end are not.")
-            start = pd.to_datetime(f"{year}-01-01 00:15:00")
-            end = pd.to_datetime(f"{year+1}-01-01 00:00:00")
-        # handle rounding to nearest interval of freq
-        self.freq_mins = self.get_freq_mins(self.freq)
-        if start.minute % self.freq_mins != 0:
-            start = start + pd.Timedelta(minutes=self.freq_mins - start.minute % self.freq_mins)
-        if end.minute % self.freq_mins != 0:
-            end = end - pd.Timedelta(minutes=end.minute % self.freq_mins)
+        start, end = self.handle_time_format(freq, start, end, year)
 
         self.get_irradiance_data(start, end, model)
         self.get_weather_data(start, end)
