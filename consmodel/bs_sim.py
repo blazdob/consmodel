@@ -361,7 +361,9 @@ class BS(BaseModel):
         self.results["var_bat"] = lst
         return self.results
 
-    def simulate(self, p_kw, control_type):
+    def simulate(self,
+                 p_kw: pd.DataFrame() = None,
+                 control_type: str = "production_saving",):
         self.hard_reset()
         self.model(control_type=control_type, p_kw=p_kw)
         self.timeseries = self.results["p_after"]

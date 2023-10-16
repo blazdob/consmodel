@@ -139,7 +139,6 @@ class PV(BaseModel):
                                 tz=self.tz)
         # ineichen with climatology table by default
         cs = self.location.get_clearsky(times, model=model)[:]
-        cs = cs.iloc[:len(cs)-4]
         # change index to pd.DatetimeIndex
         cs.index = pd.DatetimeIndex(cs.index)
         # drop tz aware
@@ -223,7 +222,7 @@ class PV(BaseModel):
             #           * (poa_global / G_STC) - the irradiance level needed to achieve this output
             #           * percentage of minutes of sunshine per hour
             #           * weather condition codes / hard cutoff at 3 - clowdy -  https://dev.meteostat.net/formats.html#weather-condition-codes
-            scaling = np.random.uniform(0.8, 1.0, len(self.results))
+            scaling = np.random.uniform(0.85, 0.99, len(self.results))
             self.results['p_mp'] = pv_size * scaling \
                                 * self.results['eta_rel'] \
                                 * (self.results['poa_global'] / pv_efficiency) \
@@ -231,7 +230,7 @@ class PV(BaseModel):
         else:
             self.results['p_mp'] = pv_size * self.results['eta_rel'] \
                                 * (self.results['poa_global'] / pv_efficiency)
-        self.results = self.results[1:]
+        self.results = self.results
         return self.results
 
     # @classmethod
@@ -428,7 +427,7 @@ class PV(BaseModel):
                  start: datetime = None,
                  end: datetime = None,
                  freq: str = None,
-                 year: int = 2022,
+                 year: int = None,
                  model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
                  consider_cloud_cover: bool = False,
                  tilt: int = 35,
@@ -464,12 +463,21 @@ class PV(BaseModel):
         if (start is None) or (end is None):
             if year is None:
                 raise ValueError("Year must be provided if start and end are not.")
-            start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
-            end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
+            start = pd.to_datetime(f"{year}-01-01 00:15:00")
+            end = pd.to_datetime(f"{year+1}-01-01 00:00:00")
+        # handle rounding to nearest interval of freq
+        self.freq_mins = self.get_freq_mins(self.freq)
+        if start.minute % self.freq_mins != 0:
+            start = start + pd.Timedelta(minutes=self.freq_mins - start.minute % self.freq_mins)
+        if end.minute % self.freq_mins != 0:
+            end = end - pd.Timedelta(minutes=end.minute % self.freq_mins)
+
         self.get_irradiance_data(start, end, model)
         self.get_weather_data(start, end)
         self.model(pv_size*1000, consider_cloud_cover, tilt, orient)
         self.results.rename(columns={"p_mp": "p"}, inplace=True)
         self.results["p"] = self.results["p"]/1000
+        self.results = self.results[self.results.index >= start.tz_localize(self.tz)]
+        self.results = self.results[self.results.index <= end.tz_localize(self.tz)]
         self.timeseries = self.results["p"]
         return self.timeseries

@@ -17,8 +17,9 @@ class BaseModel(ABC):
     def __init__(self, index, lat, lon, alt, name, tz, use_utc, freq):
         self._index = index
         self._name = name
+        self._use_utc = use_utc
         if tz is None:
-            if use_utc:
+            if self.use_utc:
                 self._tz = 'UTC'
             else:
                 self._tz = get_tz(lon, lat)
@@ -28,6 +29,7 @@ class BaseModel(ABC):
         self._lon = lon
         self._alt = alt
         self._freq = freq
+        self._freq_mins = self.get_freq_mins(freq)
 
         self.timeseries = None
         self.results = pd.DataFrame()
@@ -66,7 +68,15 @@ class BaseModel(ABC):
     @property
     def freq(self):
         return self._freq
-
+    
+    @property
+    def freq_mins(self):
+        return self._freq_mins
+    
+    @property
+    def use_utc(self):
+        return self._use_utc
+    
     @property
     def lat_lon_alt(self):
         return (self._lat, self._lon, self._alt)
@@ -78,6 +88,14 @@ class BaseModel(ABC):
     @index.setter
     def index(self, index):
         self._index = index
+
+    @freq_mins.setter
+    def freq_mins(self, freq_mins):
+        self._freq_mins = freq_mins
+    
+    @use_utc.setter
+    def use_utc(self, use_utc):
+        self._use_utc = use_utc
 
     @tz.setter
     def tz(self, tz):
@@ -111,6 +129,27 @@ class BaseModel(ABC):
         """
         return
 
+    def get_freq_mins(self, freq):
+        """
+        INPUT:
+        Function takes a string as an input and
+        includes the following keys:
+            'freq'         ... string,
+        OUTPUT:
+            freq_mins ... int
+        """
+        if freq == '10min':
+            freq_mins = 10
+        elif freq == '15min':
+            freq_mins = 15
+        elif freq == '30min':
+            freq_mins = 30
+        elif freq == '60min':
+            freq_mins = 60
+        else:
+            raise ValueError('Frequency must be 10min, 15min, 30min or 60min')
+        return freq_mins
+    
     def get_weather_data(self,
                          start: datetime = None,
                          end: datetime = None,):
@@ -135,13 +174,19 @@ class BaseModel(ABC):
                 tsun ... The one hour sunshine total in minutes (m)
                 coco ... The weather condition code
         """
+        # round the start to the nearest hour
+        start = start.replace(minute=0, second=0, microsecond=0)
+
+        # if end is over an hour then round up to the next hour
+        if end.minute > 0 or end.second > 0 or end.microsecond > 0:
+            end = end.replace(hour=end.hour+1, minute=0, second=0, microsecond=0)
+
         location = Point(self.lat, self.lon, self.alt)
         weather_data = Hourly(location,
                               start,
                               end,
                               self.tz)
         weather_data = weather_data.fetch()
-        weather_data = weather_data.iloc[:-1]
         weather_data = weather_data.resample(self.freq) \
                                    .mean() \
                                    .interpolate(method='linear')

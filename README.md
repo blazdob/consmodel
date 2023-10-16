@@ -76,6 +76,37 @@ pip3 install consmodel
    plt.show()
 ```
 
+### Consumer model
+```python
+   from consmodel import ConsumerModel
+   import pandas as pd
+   import numpy as np
+   import matplotlib.pyplot as plt
+
+   cons = ConsumerModel(lat=46.155768,
+                        lon=14.304951,
+                        alt=400,
+                        index=1,
+                        name="ConsumerModel_default",
+                        tz="Europe/Ljubljana",
+                        use_utc=False,
+                        freq="15min",)
+   timeseries = cons.simulate(has_generic_consumption=False,
+                              has_pv=True,
+                              has_heatpump=True,
+                              has_ev=False,
+                              has_battery=True,
+                              start=pd.to_datetime("2020-01-01 06:15:00"),
+                              end=pd.to_datetime("2020-01-01 06:00:00")+pd.Timedelta("1d"),
+                              pv_size=14.,
+                              wanted_temp=20.,
+                              hp_st_type="Outdoor Air / Water (regulated)",
+                              bs_st_type="10kWh_5kW",
+                              control_type="production_saving")
+   timeseries.plot()
+   plt.show()
+```
+
 
 ## Author
 

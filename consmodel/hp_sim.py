@@ -73,7 +73,6 @@ class HP(BaseModel):
         self.results = pd.concat([self.results, output], axis=1)
         # drop temp
         self.results.drop(columns=['temp'], inplace=True)
-        self.results = self.results[1:]
         return self.results
 
 
@@ -82,7 +81,7 @@ class HP(BaseModel):
                 start: datetime = None,
                 end: datetime = None,
                 freq: str = None,
-                year: int = 2022,
+                year: int = None,
                 hp_type: str = "Outdoor Air / Water (regulated)",
                 ):
         """
@@ -114,27 +113,15 @@ class HP(BaseModel):
         if (start is None) or (end is None):
             if year is None:
                 raise ValueError("Year must be provided if start and end are not.")
-            start = datetime(year,month=1,day=1,hour=0,minute=0,second=0)
-            end = datetime(year+1,month=1,day=1,hour=1,minute=0,second=0)
+            start = pd.to_datetime(f"{year}-01-01 00:15:00")
+            end = pd.to_datetime(f"{year+1}-01-01 00:00:00")
         self.get_weather_data(start, end)
         hp_type_id = self.hp_type.types[hp_type]["group_id"]
         self.model(wanted_temp, "Generic", hp_type_id)
         self.results.rename(columns={"P_el": "p"}, inplace=True)
         self.results["p"] = self.results["p"]/1000
+        self.results = self.results[self.results.index >= start.tz_localize(self.tz)]
+        self.results = self.results[self.results.index <= end.tz_localize(self.tz)]
+
         self.timeseries = self.results["p"]
         return self.timeseries
-    
-if __name__ == '__main__':
-    hp = HP(lat=46.155768,
-            lon=14.304951,
-            alt=400,
-            index=1,
-            st_type="Outdoor Air / Water (regulated)")
-    timeseries = hp.simulate(wanted_temp=45,
-                            hp_type="Generic",
-                            hp_subtype="Outdoor Air / Water (regulated)",
-                            year = 2022,)
-    print(timeseries)
-    import matplotlib.pyplot as plt
-    print(timeseries.sum())
-    plt.show()
