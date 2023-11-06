@@ -6,3 +6,6 @@ tzfpy>=0.15.1
 meteostat>=1.6.5
 scipy>=1.10.0
 hplib==1.9
+retry_requests>=2.0.0
+openmeteo_requests>=1.1.0
+requests_cache>=1.1.0
