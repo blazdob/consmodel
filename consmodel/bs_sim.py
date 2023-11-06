@@ -145,7 +145,7 @@ class BS(BaseModel):
     def max_charge_p_kw(self, max_charge_p_kw):
         if not isinstance(max_charge_p_kw, float):
             raise TypeError("Max_charge_p_kw has to be a float.")
-        if max_charge_p_kw < 0:
+        if max_charge_p_kw <= 0:
             raise ValueError("Max_charge_p_kw has to be larger than 0.")
         self._max_charge_p_kw = max_charge_p_kw
 
@@ -154,7 +154,7 @@ class BS(BaseModel):
         # has to be larger than 0
         if not isinstance(max_discharge_p_kw, float):
             raise TypeError("Max_discharge_p_kw has to be a float.")
-        if max_discharge_p_kw < 0:
+        if max_discharge_p_kw <= 0:
             raise ValueError("Max_discharge_p_kw has to be larger than 0.")
         self._max_discharge_p_kw = max_discharge_p_kw
 
@@ -162,7 +162,7 @@ class BS(BaseModel):
     def max_e_kwh(self, max_e_kwh):
         if not isinstance(max_e_kwh, float):
             raise TypeError("Max_e_kwh has to be a float.")
-        if max_e_kwh < 0:
+        if max_e_kwh <= 0:
             raise ValueError("Max_e_kwh has to be larger than 0.")
         self._max_e_kwh = max_e_kwh
 

@@ -4,7 +4,10 @@ from pvlib.location import Location
 from scipy.optimize import curve_fit
 from scipy.special import exp10
 
+from retry_requests import retry
 from datetime import datetime
+import openmeteo_requests
+import requests_cache
 import pandas as pd
 import numpy as np
 import pvlib
@@ -114,39 +117,84 @@ class PV(BaseModel):
     def __repr__(self):
         return f"PV(id={self.id}, name={self.name})"
 
+    def get_irradiance_data_open_meteo(self,
+                                       start,
+                                       end,):
+        # Setup the Open-Meteo API client with cache and retry on error
+        cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
+        retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+        openmeteo = openmeteo_requests.Client(session = retry_session)
+
+        # Make sure all required weather variables are listed here
+        # The order of variables in hourly or daily is important to assign them correctly below
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": self.lat,
+            "longitude": self.lon,
+            "hourly": ["direct_radiation_instant", "diffuse_radiation_instant", "direct_normal_irradiance_instant"],
+            "timezone": "Europe/Berlin",
+            "start_date": start,
+            "end_date": end
+        }
+        responses = openmeteo.weather_api(url, params=params)
+        response = responses[0]
+
+        # Process hourly data. The order of variables needs to be the same as requested.
+        hourly = response.Hourly()
+        hourly_direct_radiation_instant = hourly.Variables(0).ValuesAsNumpy()
+        hourly_diffuse_radiation_instant = hourly.Variables(1).ValuesAsNumpy()
+        hourly_direct_normal_irradiance_instant = hourly.Variables(2).ValuesAsNumpy()
+
+        hourly_data = {"datetime": pd.date_range(
+            start = pd.to_datetime(hourly.Time(), unit = "s"),
+            end = pd.to_datetime(hourly.TimeEnd(), unit = "s"),
+            freq = pd.Timedelta(seconds = hourly.Interval()),
+            inclusive = "left"
+        )}
+        hourly_data["ghi"] = hourly_direct_radiation_instant
+        hourly_data["dhi"] = hourly_diffuse_radiation_instant
+        hourly_data["dni"] = hourly_direct_normal_irradiance_instant
+
+        self.results = pd.DataFrame(data = hourly_data)
+
+        return self.results
+
     def get_irradiance_data(self,
-                            start: datetime = None,
-                            end: datetime = None,
-                            model: str = 'ineichen'):
+                            start,
+                            end,
+                            model: str = 'ineichen',
+                            endpoint: str = 'meteostat'):
         """
 
         INPUT:
         Function takes metadata dictionary as an input and includes the following keys:
-            'latitude'      ... float,
-            'longitude'     ... float,
-            'altitude'      ... float,
             'start_date'    ... datetime,
             'end_date'      ... datetime,
+            'model'         ... str,
+            "endpoint"      ... str,
 
         OUTPUT:
             ghi ... global horizontal irradiance
             dni ... direct normal irradiance
             dhi ... diffuse horizontal irradiance
         """
-        times = pd.date_range(start=start,
-                                end=end,
-                                freq=self.freq,
-                                tz=self.tz)
-        # ineichen with climatology table by default
-        cs = self.location.get_clearsky(times, model=model)[:]
-        # change index to pd.DatetimeIndex
-        cs.index = pd.DatetimeIndex(cs.index)
-        # drop tz aware
-        # cs.index = cs.index.tz_localize(None)
-        self.results = pd.DataFrame({'ghi': cs['ghi'],
-                        'dhi': cs['dhi'],
-                        'dni': cs['dni']
-                        })
+        if endpoint == "open-meteo":
+            self.results = self.get_irradiance_data_open_meteo(start, end, model)
+        elif endpoint == "meteostat":
+            times = pd.date_range(start=start,
+                                    end=end,
+                                    freq=self.freq,
+                                    tz=self.tz)
+            # ineichen with climatology table by default
+            cs = self.location.get_clearsky(times, model=model)[:]
+            # change index to pd.DatetimeIndex
+            cs.index = pd.DatetimeIndex(cs.index)
+            # drop tz aware
+            # cs.index = cs.index.tz_localize(None)
+            self.results = pd.DataFrame({'ghi': cs['ghi'],
+                            'dhi': cs['dhi'],
+                            'dni': cs['dni']
+                            })
         return self.results
 
     def model(self,
@@ -154,7 +202,8 @@ class PV(BaseModel):
               consider_cloud_cover: bool = False,
               tilt: int = 35,
               orient: int = 180,
-              pv_efficiency: float = 1100.,):
+              pv_efficiency: float = 1100.,
+              endpoint='meteostat'):
         """
         INPUT:
         Function takes metadata dictionary as an input and includes the following keys:
@@ -207,29 +256,35 @@ class PV(BaseModel):
                     'k_rs': 0.06999,
                     'k_rsh': 0.26144
                     }
+        
         self.results['eta_rel'] = self.pvefficiency_adr(self.results['poa_global'],
                                             self.results['temp_pv'],
                                             **adr_params)
         # parameter that is used to mask out the data
         # when the weather condition code is worse than Overcast
-        self.results["coco_mask"] = self.results["coco"].apply(
-                                    lambda x: 1 if x < 2.5
-                                            else (np.random.uniform(0.4, 0.8) if x < 4.5
-                                                                            else 0.3))
-        if consider_cloud_cover:
-            #  pv_size  * scaling
-            #           * relative_efficiency of the pannels
-            #           * (poa_global / G_STC) - the irradiance level needed to achieve this output
-            #           * percentage of minutes of sunshine per hour
-            #           * weather condition codes / hard cutoff at 3 - clowdy -  https://dev.meteostat.net/formats.html#weather-condition-codes
-            scaling = np.random.uniform(0.85, 0.99, len(self.results))
-            self.results['p_mp'] = pv_size * scaling \
-                                * self.results['eta_rel'] \
-                                * (self.results['poa_global'] / pv_efficiency) \
-                                * self.results["coco_mask"]
-        else:
+        if endpoint == "meteostat":
+            print("this works only on the grand scale not on the micro level.")
+            self.results["coco_mask"] = self.results["coco"].apply(
+                                        lambda x: 1 if x < 2.5
+                                                else (np.random.uniform(0.4, 0.8) if x < 4.5
+                                                                                else 0.3))
+            if consider_cloud_cover:
+                #  pv_size  * scaling
+                #           * relative_efficiency of the pannels
+                #           * (poa_global / G_STC) - the irradiance level needed to achieve this output
+                #           * percentage of minutes of sunshine per hour
+                #           * weather condition codes / hard cutoff at 3 - clowdy -  https://dev.meteostat.net/formats.html#weather-condition-codes
+                scaling = np.random.uniform(0.85, 0.99, len(self.results))
+                self.results['p_mp'] = pv_size * scaling \
+                                    * self.results['eta_rel'] \
+                                    * (self.results['poa_global'] / pv_efficiency) \
+                                    * self.results["coco_mask"]
+            else:
+                self.results['p_mp'] = pv_size * self.results['eta_rel'] \
+                                    * (self.results['poa_global'] / pv_efficiency)
+        elif endpoint == "open-meteo":
             self.results['p_mp'] = pv_size * self.results['eta_rel'] \
-                                * (self.results['poa_global'] / pv_efficiency)
+                                    * (self.results['poa_global'] / pv_efficiency)
         self.results = self.results
         return self.results
 
@@ -431,7 +486,8 @@ class PV(BaseModel):
                  model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
                  consider_cloud_cover: bool = False,
                  tilt: int = 35,
-                 orient: int = 180,):
+                 orient: int = 180,
+                 endpoint='meteostat'):
         """
         Simulate the heat pump for a given time period.
 
@@ -451,6 +507,13 @@ class PV(BaseModel):
             Model of the simulation.
         consider_cloud_cover : bool
             Consider cloud cover or not.
+        tilt : int
+            Tilt of the PV.
+        orient : int
+            Orientation of the PV.
+        endpoint : str
+            Endpoint of the simulation. - meteostat, open-meteo
+
 
         Returns
         -------
@@ -459,9 +522,9 @@ class PV(BaseModel):
         """
         start, end = self.handle_time_format(freq, start, end, year)
 
-        self.get_irradiance_data(start, end, model)
+        self.get_irradiance_data(start, end, model, endpoint)
         self.get_weather_data(start, end)
-        self.model(pv_size*1000, consider_cloud_cover, tilt, orient)
+        self.model(pv_size*1000, consider_cloud_cover, tilt, orient, endpoint)
         self.results.rename(columns={"p_mp": "p"}, inplace=True)
         self.results["p"] = self.results["p"]/1000
         self.results = self.results[self.results.index >= start.tz_localize(self.tz)]
