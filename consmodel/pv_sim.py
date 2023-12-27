@@ -1,16 +1,15 @@
+from datetime import datetime
+
+import numpy as np
+import openmeteo_requests
+import pandas as pd
+import pvlib
+import requests_cache
 from pvlib.irradiance import get_total_irradiance
 from pvlib.location import Location
-
+from retry_requests import retry
 from scipy.optimize import curve_fit
 from scipy.special import exp10
-
-from retry_requests import retry
-from datetime import datetime
-import openmeteo_requests
-import requests_cache
-import pandas as pd
-import numpy as np
-import pvlib
 
 from consmodel.base_model import BaseModel
 
@@ -58,21 +57,24 @@ class PV(BaseModel):
         Returns a pandas dataframe with the columns about the simulation and
         all the results of the simulation.
     """
-    def __init__(self,
-                lat,
-                lon,
-                alt,
-                index: int = 0,
-                name: str = "PV_default",
-                tz: str = None,
-                use_utc: bool = False,
-                freq: str = "15min",):
+
+    def __init__(
+        self,
+        lat,
+        lon,
+        alt,
+        index: int = 0,
+        name: str = "PV_default",
+        tz: str = None,
+        use_utc: bool = False,
+        freq: str = "15min",
+    ):
         super().__init__(index, lat, lon, alt, name, tz, use_utc, freq)
         self._location = Location(lat,
-                    lon,
-                    tz=self._tz,
-                    altitude=alt,
-                    name=name)
+                                  lon,
+                                  tz=self._tz,
+                                  altitude=alt,
+                                  name=name)
 
     def __repr__(self):
         return f"PV model(id={self.id}, name={self.name})"
@@ -80,7 +82,7 @@ class PV(BaseModel):
     def __str__(self):
         return f"PV model(id={self.id}, name={self.name})"
 
-    #__________________________________________________________________________
+    # __________________________________________________________________________
     # Properties
     @property
     def pv_size(self):
@@ -99,13 +101,13 @@ class PV(BaseModel):
         self._lat = lat_lon_alt[0]
         self._lon = lat_lon_alt[1]
         self._alt = lat_lon_alt[2]
-        #recalculate timezone
+        # recalculate timezone
         # recalculate location
         self._location = Location(self.lat,
-                    self.lon,
-                    tz=self.tz,
-                    altitude=self.alt,
-                    name=self.name)
+                                  self.lon,
+                                  tz=self.tz,
+                                  altitude=self.alt,
+                                  name=self.name)
 
     @property
     def location(self):
@@ -117,24 +119,35 @@ class PV(BaseModel):
     def __repr__(self):
         return f"PV(id={self.id}, name={self.name})"
 
-    def get_irradiance_data_open_meteo(self,
-                                       start,
-                                       end,):
+    def get_irradiance_data_open_meteo(
+        self,
+        start,
+        end,
+    ):
         # Setup the Open-Meteo API client with cache and retry on error
-        cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
-        retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
-        openmeteo = openmeteo_requests.Client(session = retry_session)
+        cache_session = requests_cache.CachedSession('.cache',
+                                                     expire_after=3600)
+        retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+        openmeteo = openmeteo_requests.Client(session=retry_session)
 
         # Make sure all required weather variables are listed here
         # The order of variables in hourly or daily is important to assign them correctly below
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
-            "latitude": self.lat,
-            "longitude": self.lon,
-            "hourly": ["direct_radiation_instant", "diffuse_radiation_instant", "direct_normal_irradiance_instant"],
-            "timezone": "Europe/Berlin",
-            "start_date": start,
-            "end_date": end
+            "latitude":
+            self.lat,
+            "longitude":
+            self.lon,
+            "hourly": [
+                "direct_radiation_instant", "diffuse_radiation_instant",
+                "direct_normal_irradiance_instant"
+            ],
+            "timezone":
+            "Europe/Berlin",
+            "start_date":
+            start,
+            "end_date":
+            end
         }
         responses = openmeteo.weather_api(url, params=params)
         response = responses[0]
@@ -143,19 +156,21 @@ class PV(BaseModel):
         hourly = response.Hourly()
         hourly_direct_radiation_instant = hourly.Variables(0).ValuesAsNumpy()
         hourly_diffuse_radiation_instant = hourly.Variables(1).ValuesAsNumpy()
-        hourly_direct_normal_irradiance_instant = hourly.Variables(2).ValuesAsNumpy()
+        hourly_direct_normal_irradiance_instant = hourly.Variables(
+            2).ValuesAsNumpy()
 
-        hourly_data = {"datetime": pd.date_range(
-            start = pd.to_datetime(hourly.Time(), unit = "s"),
-            end = pd.to_datetime(hourly.TimeEnd(), unit = "s"),
-            freq = pd.Timedelta(seconds = hourly.Interval()),
-            inclusive = "left"
-        )}
+        hourly_data = {
+            "datetime":
+            pd.date_range(start=pd.to_datetime(hourly.Time(), unit="s"),
+                          end=pd.to_datetime(hourly.TimeEnd(), unit="s"),
+                          freq=pd.Timedelta(seconds=hourly.Interval()),
+                          inclusive="left")
+        }
         hourly_data["ghi"] = hourly_direct_radiation_instant
         hourly_data["dhi"] = hourly_diffuse_radiation_instant
         hourly_data["dni"] = hourly_direct_normal_irradiance_instant
 
-        self.results = pd.DataFrame(data = hourly_data)
+        self.results = pd.DataFrame(data=hourly_data)
 
         return self.results
 
@@ -165,7 +180,6 @@ class PV(BaseModel):
                             model: str = 'ineichen',
                             endpoint: str = 'meteostat'):
         """
-
         INPUT:
         Function takes metadata dictionary as an input and includes the following keys:
             'start_date'    ... datetime,
@@ -179,22 +193,24 @@ class PV(BaseModel):
             dhi ... diffuse horizontal irradiance
         """
         if endpoint == "open-meteo":
-            self.results = self.get_irradiance_data_open_meteo(start, end, model)
+            self.results = self.get_irradiance_data_open_meteo(
+                start, end, model)
         elif endpoint == "meteostat":
             times = pd.date_range(start=start,
-                                    end=end,
-                                    freq=self.freq,
-                                    tz=self.tz)
+                                  end=end,
+                                  freq=self.freq,
+                                  tz=self.tz)
             # ineichen with climatology table by default
             cs = self.location.get_clearsky(times, model=model)[:]
             # change index to pd.DatetimeIndex
             cs.index = pd.DatetimeIndex(cs.index)
             # drop tz aware
             # cs.index = cs.index.tz_localize(None)
-            self.results = pd.DataFrame({'ghi': cs['ghi'],
-                            'dhi': cs['dhi'],
-                            'dni': cs['dni']
-                            })
+            self.results = pd.DataFrame({
+                'ghi': cs['ghi'],
+                'dhi': cs['dhi'],
+                'dni': cs['dni']
+            })
         return self.results
 
     def model(self,
@@ -205,14 +221,20 @@ class PV(BaseModel):
               pv_efficiency: float = 1100.,
               endpoint='meteostat'):
         """
-        INPUT:
         Function takes metadata dictionary as an input and includes the following keys:
-            'pv_size'               ... float,
-            'consider_cloud_cover'  ... bool,
-            'tilt'                  ... float,
-            'orient'                ... float,
-            'pv_efficiency'         ... float,
+
+        INPUT:
+        ----------
+            pv_size                 ... size of the pv in kW
+            consider_cloud_cover    ... consider cloud cover or not
+            tilt                    ... tilt of the pv
+            orient                  ... orientation of the pv
+            pv_efficiency           ... efficiency of the pv
+            endpoint                ... endpoint of the simulation
         OUTPUT:
+        ----------
+
+
             results         ... pandas dataframe with
                                 results that includesthe following columns:
                 ghi         ... global horizontal irradiance
@@ -235,39 +257,34 @@ class PV(BaseModel):
                 p_mp        ... output power of the pv array
         """
         solpos = self.location.get_solarposition(self.results.index)
-        total_irrad = get_total_irradiance(tilt,
-                                            orient,
-                                            solpos.apparent_zenith,
-                                            solpos.azimuth,
-                                            self.results.dni,
-                                            self.results.ghi,
-                                            self.results.dhi)
+        total_irrad = get_total_irradiance(tilt, orient,
+                                           solpos.apparent_zenith,
+                                           solpos.azimuth, self.results.dni,
+                                           self.results.ghi, self.results.dhi)
 
         self.results['poa_global'] = total_irrad.poa_global
-        self.results['temp_pv'] = pvlib.temperature.faiman(self.results.poa_global,
-                                                            self.results.temp,
-                                                            self.results.wspd)
+        self.results['temp_pv'] = pvlib.temperature.faiman(
+            self.results.poa_global, self.results.temp, self.results.wspd)
         # Borrow the ADR model parameters from the other example:
         # https://pvlib-python.readthedocs.io/en/stable/gallery/adr-pvarray/plot_fit_to_matrix.html
         # IEC 61853-1 standard defines a standard matrix of conditions for measurements
-        adr_params = {'k_a': 0.99924,
-                    'k_d': -5.49097,
-                    'tc_d': 0.01918,
-                    'k_rs': 0.06999,
-                    'k_rsh': 0.26144
-                    }
-        
-        self.results['eta_rel'] = self.pvefficiency_adr(self.results['poa_global'],
-                                            self.results['temp_pv'],
-                                            **adr_params)
+        adr_params = {
+            'k_a': 0.99924,
+            'k_d': -5.49097,
+            'tc_d': 0.01918,
+            'k_rs': 0.06999,
+            'k_rsh': 0.26144
+        }
+
+        self.results['eta_rel'] = self.pvefficiency_adr(
+            self.results['poa_global'], self.results['temp_pv'], **adr_params)
         # parameter that is used to mask out the data
         # when the weather condition code is worse than Overcast
         if endpoint == "meteostat":
             print("this works only on the grand scale not on the micro level.")
             self.results["coco_mask"] = self.results["coco"].apply(
-                                        lambda x: 1 if x < 2.5
-                                                else (np.random.uniform(0.4, 0.8) if x < 4.5
-                                                                                else 0.3))
+                lambda x: 1 if x < 2.5 else (np.random.uniform(0.4, 0.8)
+                                             if x < 4.5 else 0.3))
             if consider_cloud_cover:
                 #  pv_size  * scaling
                 #           * relative_efficiency of the pannels
@@ -276,21 +293,21 @@ class PV(BaseModel):
                 #           * weather condition codes / hard cutoff at 3 - clowdy -  https://dev.meteostat.net/formats.html#weather-condition-codes
                 scaling = np.random.uniform(0.85, 0.99, len(self.results))
                 self.results['p_mp'] = pv_size * scaling \
-                                    * self.results['eta_rel'] \
-                                    * (self.results['poa_global'] / pv_efficiency) \
-                                    * self.results["coco_mask"]
+                    * self.results['eta_rel'] \
+                    * (self.results['poa_global'] / pv_efficiency) \
+                    * self.results["coco_mask"]
             else:
                 self.results['p_mp'] = pv_size * self.results['eta_rel'] \
-                                    * (self.results['poa_global'] / pv_efficiency)
+                    * (self.results['poa_global'] / pv_efficiency)
         elif endpoint == "open-meteo":
             self.results['p_mp'] = pv_size * self.results['eta_rel'] \
-                                    * (self.results['poa_global'] / pv_efficiency)
+                * (self.results['poa_global'] / pv_efficiency)
         self.results = self.results
         return self.results
 
     # @classmethod
-    def pvefficiency_adr(self, effective_irradiance, temp_cell,
-                         k_a, k_d, tc_d, k_rs, k_rsh):
+    def pvefficiency_adr(self, effective_irradiance, temp_cell, k_a, k_d, tc_d,
+                         k_rs, k_rsh):
         """
         Calculate PV module efficiency using the ADR model.
         The efficiency varies with irradiance and operating temperature
@@ -381,12 +398,12 @@ class PV(BaseModel):
         dt = temp_cell - T_REF
 
         # equation 29 in JPV
-        s_o     = exp10(k_d + (dt * tc_d))                             # noQA: E221
+        s_o = exp10(k_d + (dt * tc_d))  # noQA: E221
         s_o_ref = exp10(k_d)
 
         # equation 28 and 30 in JPV
         # the constant k_v does not appear here because it cancels out
-        v  = np.log(s / s_o     + 1)                                   # noQA: E221
+        v = np.log(s / s_o + 1)  # noQA: E221
         v /= np.log(1 / s_o_ref + 1)
 
         # equation 25 in JPV
@@ -396,10 +413,10 @@ class PV(BaseModel):
 
     @classmethod
     def fit_pvefficiency_adr(effective_irradiance,
-                            temp_cell,
-                            eta,
-                            dict_output=True,
-                            **kwargs):
+                             temp_cell,
+                             eta,
+                             dict_output=True,
+                             **kwargs):
         """
         Determine the parameters of the ADR module efficiency model by non-linear
         least-squares fit to lab or field measurements.
@@ -444,32 +461,34 @@ class PV(BaseModel):
         eta_max = np.max(eta)
 
         P_NAMES = ['k_a', 'k_d', 'tc_d', 'k_rs', 'k_rsh']
-        P_MAX   = [+np.inf,   0, +0.1, 1, 1]                           # noQA: E221
-        P_MIN   = [0,       -12, -0.1, 0, 0]                           # noQA: E221
-        P0      = [eta_max,  -6,  0.0, 0, 0]                           # noQA: E221
-        P_SCALE = [eta_max,  10,  0.1, 1, 1]
+        P_MAX = [+np.inf, 0, +0.1, 1, 1]  # noQA: E221
+        P_MIN = [0, -12, -0.1, 0, 0]  # noQA: E221
+        P0 = [eta_max, -6, 0.0, 0, 0]  # noQA: E221
+        P_SCALE = [eta_max, 10, 0.1, 1, 1]
 
         SIGMA = 1 / np.sqrt(irradiance / 1000)
 
-        fit_options = dict(p0=P0,
-                        bounds=[P_MIN, P_MAX],
-                        method='trf',
-                        x_scale=P_SCALE,
-                        loss='soft_l1',
-                        f_scale=eta_max * 0.05,
-                        sigma=SIGMA,
-                        )
+        fit_options = dict(
+            p0=P0,
+            bounds=[P_MIN, P_MAX],
+            method='trf',
+            x_scale=P_SCALE,
+            loss='soft_l1',
+            f_scale=eta_max * 0.05,
+            sigma=SIGMA,
+        )
 
         fit_options.update(kwargs)
 
         def adr_wrapper(xdata, *params):
             return PV.pvefficiency_adr(*xdata, *params)
 
-        result = curve_fit(adr_wrapper,
-                        xdata=[irradiance, temperature],
-                        ydata=eta,
-                        **fit_options,
-                        )
+        result = curve_fit(
+            adr_wrapper,
+            xdata=[irradiance, temperature],
+            ydata=eta,
+            **fit_options,
+        )
         popt = result[0]
 
         if dict_output:
@@ -477,17 +496,19 @@ class PV(BaseModel):
         else:
             return popt
 
-    def simulate(self,
-                 pv_size: float,
-                 start: datetime = None,
-                 end: datetime = None,
-                 freq: str = None,
-                 year: int = None,
-                 model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
-                 consider_cloud_cover: bool = False,
-                 tilt: int = 35,
-                 orient: int = 180,
-                 endpoint='meteostat'):
+    def simulate(
+            self,
+            pv_size: float,
+            start: datetime = None,
+            end: datetime = None,
+            freq: str = None,
+            year: int = None,
+            model:
+        str = "ineichen",  # "ineichen", "haurwitz", "simplified_solis"
+            consider_cloud_cover: bool = False,
+            tilt: int = 35,
+            orient: int = 180,
+            endpoint='meteostat'):
         """
         Simulate the heat pump for a given time period.
 
@@ -524,10 +545,13 @@ class PV(BaseModel):
 
         self.get_irradiance_data(start, end, model, endpoint)
         self.get_weather_data(start, end)
-        self.model(pv_size*1000, consider_cloud_cover, tilt, orient, endpoint)
+        self.model(pv_size * 1000, consider_cloud_cover, tilt, orient,
+                   endpoint)
         self.results.rename(columns={"p_mp": "p"}, inplace=True)
-        self.results["p"] = self.results["p"]/1000
-        self.results = self.results[self.results.index >= start.tz_localize(self.tz)]
-        self.results = self.results[self.results.index <= end.tz_localize(self.tz)]
+        self.results["p"] = self.results["p"] / 1000
+        self.results = self.results[self.results.index >= start.tz_localize(
+            self.tz)]
+        self.results = self.results[self.results.index <= end.tz_localize(
+            self.tz)]
         self.timeseries = self.results["p"]
         return self.timeseries

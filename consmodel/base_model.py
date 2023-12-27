@@ -13,6 +13,7 @@ class BaseModel(ABC):
     """
     A base class for all models
     """
+
     @abstractmethod
     def __init__(self, index, lat, lon, alt, name, tz, use_utc, freq):
         self._index = index
@@ -64,19 +65,19 @@ class BaseModel(ABC):
     @property
     def tz(self):
         return self._tz
-    
+
     @property
     def freq(self):
         return self._freq
-    
+
     @property
     def freq_mins(self):
         return self._freq_mins
-    
+
     @property
     def use_utc(self):
         return self._use_utc
-    
+
     @property
     def lat_lon_alt(self):
         return (self._lat, self._lon, self._alt)
@@ -92,7 +93,7 @@ class BaseModel(ABC):
     @freq_mins.setter
     def freq_mins(self, freq_mins):
         self._freq_mins = freq_mins
-    
+
     @use_utc.setter
     def use_utc(self, use_utc):
         self._use_utc = use_utc
@@ -149,27 +150,31 @@ class BaseModel(ABC):
         else:
             raise ValueError('Frequency must be 10min, 15min, 30min or 60min')
         return freq_mins
-    
+
     def handle_time_format(self, freq, start, end, year):
         if freq is not None:
             self.freq = freq
 
         if (start is None) or (end is None):
             if year is None:
-                raise ValueError("Year must be provided if start and end are not.")
+                raise ValueError(
+                    "Year must be provided if start and end are not.")
             start = pd.to_datetime(f"{year}-01-01 00:15:00")
             end = pd.to_datetime(f"{year+1}-01-01 00:00:00")
         # handle rounding to nearest interval of freq
         self.freq_mins = self.get_freq_mins(self.freq)
         if start.minute % self.freq_mins != 0:
-            start = start + pd.Timedelta(minutes=self.freq_mins - start.minute % self.freq_mins)
+            start = start + pd.Timedelta(minutes=self.freq_mins -
+                                         start.minute % self.freq_mins)
         if end.minute % self.freq_mins != 0:
             end = end - pd.Timedelta(minutes=end.minute % self.freq_mins)
         return start, end
-    
-    def get_weather_data(self,
-                         start: datetime = None,
-                         end: datetime = None,):
+
+    def get_weather_data(
+        self,
+        start: datetime = None,
+        end: datetime = None,
+    ):
         """
         INPUT:
         Function takes metadata dictionary as an input and
@@ -196,13 +201,13 @@ class BaseModel(ABC):
 
         # if end is over an hour then round up to the next hour
         if end.minute > 0 or end.second > 0 or end.microsecond > 0:
-            end = end.replace(hour=end.hour+1, minute=0, second=0, microsecond=0)
+            end = end.replace(hour=end.hour + 1,
+                              minute=0,
+                              second=0,
+                              microsecond=0)
 
         location = Point(self.lat, self.lon, self.alt)
-        weather_data = Hourly(location,
-                              start,
-                              end,
-                              self.tz)
+        weather_data = Hourly(location, start, end, self.tz)
         weather_data = weather_data.fetch()
         weather_data = weather_data.resample(self.freq) \
                                    .mean() \

@@ -1,4 +1,3 @@
-
 class GenericType:
 
     types = {}
@@ -9,7 +8,6 @@ class GenericType:
     @property
     def name(self):
         return self._name
-    
 
     def get_standard_types(self):
         """
@@ -22,16 +20,18 @@ class GenericType:
         Return a type object.
         """
         return self.types[name]
-    
+
     def get_params(self):
         """
         Return a dictionary of parameters.
         """
         # get all attrs
-        attrs = [attr for attr in dir(self) if not callable(getattr(self, attr)) 
-                                                    and not attr.startswith("__") 
-                                                    and not attr.startswith("_")]
+        attrs = [
+            attr for attr in dir(self) if not callable(getattr(self, attr))
+            and not attr.startswith("__") and not attr.startswith("_")
+        ]
         return attrs
+
 
 class StorageType(GenericType):
     """
@@ -51,7 +51,7 @@ class StorageType(GenericType):
         - 20kWh_10kW
         - 20kWh_15kW
     """
-    
+
     types = {
         "tesla_powerwall": {
             "name": "tesla_powerwall",
@@ -102,26 +102,30 @@ class StorageType(GenericType):
             "max_e_kwh": 20.,
         },
     }
-    def __init__(self,
-                storage_type: str = "tesla_powerwall",
-                ):
+
+    def __init__(
+        self,
+        storage_type: str = "tesla_powerwall",
+    ):
         self._name = self.types[storage_type]["name"]
         self._max_charge_p_kw = self.types[storage_type]["max_charge_p_kw"]
-        self._max_discharge_p_kw = self.types[storage_type]["max_discharge_p_kw"]
+        self._max_discharge_p_kw = self.types[storage_type][
+            "max_discharge_p_kw"]
         self._max_e_kwh = self.types[storage_type]["max_e_kwh"]
 
     @property
     def max_charge_p_kw(self):
         return self._max_charge_p_kw
-    
+
     @property
     def max_discharge_p_kw(self):
         return self._max_discharge_p_kw
-    
+
     @property
     def max_e_kwh(self):
         return self._max_e_kwh
-    
+
+
 class HPType(GenericType):
     """
     Heat pump type class.
@@ -170,9 +174,10 @@ class HPType(GenericType):
         },
     }
 
-    def __init__(self,
-                hp_type: str = "Outdoor Air / Water (regulated)",
-                ):
+    def __init__(
+        self,
+        hp_type: str = "Outdoor Air / Water (regulated)",
+    ):
         self._name = self.types[hp_type]["name"]
         self._group_id = self.types[hp_type]["group_id"]
         self._regulated = self.types[hp_type]["regulated"]
@@ -180,7 +185,7 @@ class HPType(GenericType):
     @property
     def group_id(self):
         return self._group_id
-    
+
     @property
     def regulated(self):
         return self._regulated

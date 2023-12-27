@@ -1,17 +1,20 @@
 """
 Module Docstring
 
-This module contains the ConsumerModel class. This class joins the subclasses, based on the consumer type, into a single class.
+This module contains the ConsumerModel class. This class
+joins the subclasses, based on the consumer type, into a single class.
 """
+
+import warnings
+from datetime import datetime
+
+import pandas as pd
 
 from consmodel.base_model import BaseModel
 from consmodel.bs_sim import BS
 from consmodel.hp_sim import HP
 from consmodel.pv_sim import PV
 
-import pandas as pd
-import warnings
-from datetime import datetime
 
 class ConsumerModel(BaseModel):
     """
@@ -29,11 +32,11 @@ class ConsumerModel(BaseModel):
         Flag to indicate if UTC should be used as time zone.
     lat : float
         Latitude of the consumer.
-    lon : float 
+    lon : float
         Longitude of the consumer.
     alt : float
         Altitude of the consumer.
-    
+
     Methods
     -------
     simulate()
@@ -42,47 +45,54 @@ class ConsumerModel(BaseModel):
         Apply the consumer submodels anc create the results.
     """
 
-    def __init__(self,
-                 lat,
-                 lon,
-                 alt,
-                 index: int = 0,
-                 name: str = "ConsumerModel_default",
-                 tz: str = None,
-                 use_utc: bool = False,
-                 freq: str = "15min",):
+    def __init__(
+        self,
+        lat,
+        lon,
+        alt,
+        index: int = 0,
+        name: str = "ConsumerModel_default",
+        tz: str = None,
+        use_utc: bool = False,
+        freq: str = "15min",
+    ):
         super().__init__(index, lat, lon, alt, name, tz, use_utc, freq)
         self.elements = {"bs": None, "hp": None, "pv": None, "ev": None}
 
-    def simulate(self,
-                 has_generic_consumption: bool = True,
-                 has_pv: bool = False,
-                 has_heatpump: bool = False,
-                 has_ev: bool = False,
-                 has_battery: bool = False,
-                 #time params
-                 start: datetime = None,
-                 end: datetime = None,
-                 year: int = None,
-                 freq: str = "15min",
-                 #PV params
-                 pv_size: float = 1.,
-                 model: str = "ineichen", # "ineichen", "haurwitz", "simplified_solis"
-                 consider_cloud_cover: bool = True,
-                 tilt: int = 35,
-                 orient: int = 180,
-                 #HP params
-                 wanted_temp: float = 20,
-                 hp_st_type: str = "Outdoor Air / Water (regulated)",
-                 #EV params
-                 #BS params
-                 bs_st_type: str = "10kWh_5kW",
-                 control_type: str = "installed_power",
-                 max_charge_p_kw: float = 1.,
-                 max_discharge_p_kw: float = 1.,
-                 max_e_kwh: float = 1.,
-                 soc: float = 1.,
-                 ):
+        self.bs = None
+        self.hp = None
+        self.pv = None
+
+    def simulate(
+        self,
+        has_generic_consumption: bool = True,
+        has_pv: bool = False,
+        has_heatpump: bool = False,
+        has_ev: bool = False,
+        has_battery: bool = False,
+        #time params
+        start: datetime = None,
+        end: datetime = None,
+        year: int = None,
+        freq: str = "15min",
+        #PV params
+        pv_size: float = 1.,
+        model: str = "ineichen",  # "ineichen", "haurwitz", "simplified_solis"
+        consider_cloud_cover: bool = True,
+        tilt: int = 35,
+        orient: int = 180,
+        #HP params
+        wanted_temp: float = 20,
+        hp_st_type: str = "Outdoor Air / Water (regulated)",
+        #EV params
+        #BS params
+        bs_st_type: str = "10kWh_5kW",
+        control_type: str = "installed_power",
+        max_charge_p_kw: float = 1.,
+        max_discharge_p_kw: float = 1.,
+        max_e_kwh: float = 1.,
+        soc: float = 1.,
+    ):
         """
         Simulate the consumer.
 
@@ -123,11 +133,11 @@ class ConsumerModel(BaseModel):
         hp_st_type : str
             Heat pump type.
 
-        bs_st_type : str    
+        bs_st_type : str
             Battery storage type.
         control_type : str
             Control type of the battery storage.
-        
+
 
         Returns
         -------
@@ -137,41 +147,50 @@ class ConsumerModel(BaseModel):
         if freq is not None:
             self.freq = freq
         # first simulate bare consumer
-        self.initialize(has_battery=has_battery,
-                        has_heatpump=has_heatpump,
-                        has_pv=has_pv,
-                        has_ev=has_ev,
-                        bs_st_type=bs_st_type,
-                        max_charge_p_kw=max_charge_p_kw,
-                        max_discharge_p_kw=max_discharge_p_kw,
-                        max_e_kwh=max_e_kwh,
-                        soc=soc,
-                        hp_st_type=hp_st_type,)
-        self.model(has_generic_consumption=has_generic_consumption,
-                   start=start,
-                   end=end,
-                   freq=freq,
-                   year=year,)
-        # then simulate the submodels and add the results (in the following order: PV, HP, EV, ... , BS)
+        self.initialize(
+            has_battery=has_battery,
+            has_heatpump=has_heatpump,
+            has_pv=has_pv,
+            has_ev=has_ev,
+            bs_st_type=bs_st_type,
+            max_charge_p_kw=max_charge_p_kw,
+            max_discharge_p_kw=max_discharge_p_kw,
+            max_e_kwh=max_e_kwh,
+            soc=soc,
+            hp_st_type=hp_st_type,
+        )
+        self.model(
+            has_generic_consumption=has_generic_consumption,
+            start=start,
+            end=end,
+            freq=freq,
+            year=year,
+        )
+        # then simulate the submodels and add the results
+        # (in the following order: PV, HP, EV, ... , BS)
         if has_pv:
-            self.pv.simulate(pv_size=pv_size,
-                             year=year,
-                             start=start,
-                             end=end,
-                             freq=freq,
-                             model=model,
-                             consider_cloud_cover=consider_cloud_cover,
-                             tilt=tilt,
-                             orient=orient,)
+            self.pv.simulate(
+                pv_size=pv_size,
+                year=year,
+                start=start,
+                end=end,
+                freq=freq,
+                model=model,
+                consider_cloud_cover=consider_cloud_cover,
+                tilt=tilt,
+                orient=orient,
+            )
             self.results["p_pv"] = self.pv.results["p"]
             self.results["p"] -= self.results["p_pv"]
         if has_heatpump:
-            self.hp.simulate(wanted_temp=wanted_temp,
-                             start=start,
-                             end=end,
-                             year=year,
-                             freq=freq,
-                             hp_type=hp_st_type,)
+            self.hp.simulate(
+                wanted_temp=wanted_temp,
+                start=start,
+                end=end,
+                year=year,
+                freq=freq,
+                hp_type=hp_st_type,
+            )
             self.results["p_hp"] = self.hp.results["p"]
             self.results["p"] += self.hp.results["p"]
         if has_ev:
@@ -181,24 +200,24 @@ class ConsumerModel(BaseModel):
                              p_kw=self.results.copy())
             self.results["p_bs"] = self.bs.results["p_after"]
             self.results["p"] = self.bs.results["p_after"]
-        
         self.timeseries = self.results["p"]
         return self.timeseries
-    
-    def initialize(self,
-              has_pv: bool = False,
-              has_heatpump: bool = False,
-              has_ev: bool = False,
-              has_battery: bool = False,
-              #BS params
-              bs_st_type: str = "10kWh_5kW",
-              max_charge_p_kw: float = 1.,
-              max_discharge_p_kw: float = 1.,
-              max_e_kwh: float = 1.,
-              soc: float = 1.,
-              #HP params
-              hp_st_type: str = "Outdoor Air / Water (regulated)",
-              ):
+
+    def initialize(
+        self,
+        has_pv: bool = False,
+        has_heatpump: bool = False,
+        has_ev: bool = False,
+        has_battery: bool = False,
+        #BS params
+        bs_st_type: str = "10kWh_5kW",
+        max_charge_p_kw: float = 1.,
+        max_discharge_p_kw: float = 1.,
+        max_e_kwh: float = 1.,
+        soc: float = 1.,
+        #HP params
+        hp_st_type: str = "Outdoor Air / Water (regulated)",
+    ):
         """
         Initialize the consumer.
 
@@ -218,7 +237,7 @@ class ConsumerModel(BaseModel):
             Maximum charging power of the battery storage.
         max_discharge_p_kw : float
             Maximum discharging power of the battery storage.
-        max_e_kwh : float   
+        max_e_kwh : float
             Maximum energy of the battery storage.
         soc : float
             State of charge of the battery storage.
@@ -231,63 +250,91 @@ class ConsumerModel(BaseModel):
         """
         self.results["p"] = 0
         if has_battery:
-            self.bs = BS(lat=self.lat,
-                         lon=self.lon,
-                         alt=self.alt,
-                         index=self.index,
-                         freq=self.freq,
-                         name=self.name + "_BS",
-                         st_type=bs_st_type,
-                         tz=self.tz,
-                         use_utc=self.use_utc,
-                         max_charge_p_kw=max_charge_p_kw,
-                         max_discharge_p_kw=max_discharge_p_kw,
-                         max_e_kwh=max_e_kwh,
-                         soc=soc,)
+            self.bs = BS(
+                lat=self.lat,
+                lon=self.lon,
+                alt=self.alt,
+                index=self.index,
+                freq=self.freq,
+                name=self.name + "_BS",
+                st_type=bs_st_type,
+                tz=self.tz,
+                use_utc=self.use_utc,
+                max_charge_p_kw=max_charge_p_kw,
+                max_discharge_p_kw=max_discharge_p_kw,
+                max_e_kwh=max_e_kwh,
+                soc=soc,
+            )
             self.elements["bs"] = self.bs
         if has_heatpump:
-            self.hp = HP(lat=self.lat,
-                         lon=self.lon,
-                         alt=self.alt,
-                         index=self.index,
-                         tz=self.tz,
-                         use_utc=self.use_utc,
-                         freq=self.freq,
-                         name=self.name + "_HP",
-                         st_type=hp_st_type,
-                         )
+            self.hp = HP(
+                lat=self.lat,
+                lon=self.lon,
+                alt=self.alt,
+                index=self.index,
+                tz=self.tz,
+                use_utc=self.use_utc,
+                freq=self.freq,
+                name=self.name + "_HP",
+                st_type=hp_st_type,
+            )
             self.elements["hp"] = self.hp
         if has_pv:
-            self.pv = PV(lat=self.lat,
-                         lon=self.lon,
-                         alt=self.alt,
-                         index=self.index,
-                         name=self.name + "_PV",
-                         tz=self.tz,
-                         use_utc=self.use_utc,
-                         freq=self.freq,)
+            self.pv = PV(
+                lat=self.lat,
+                lon=self.lon,
+                alt=self.alt,
+                index=self.index,
+                name=self.name + "_PV",
+                tz=self.tz,
+                use_utc=self.use_utc,
+                freq=self.freq,
+            )
             self.elements["pv"] = self.pv
         if has_ev:
             warnings.warn("EV not implemented yet.")
 
-    def model(self,
-              has_generic_consumption: bool = False,
-              start: datetime = None,
-              end: datetime = None,
-              freq: str = None,
-              year: int = None,
-              ):
+    def model(
+        self,
+        has_generic_consumption: bool = False,
+        start: datetime = None,
+        end: datetime = None,
+        freq: str = None,
+        year: int = None,
+    ):
         start, end = self.handle_time_format(freq, start, end, year)
 
         if has_generic_consumption:
             warnings.warn("generic consumption is not implemented yet.")
-            self.results["p"] = self.generic_consumption(start=start,
-                                                         end=end,)
+            self.results["p"] = self.generic_consumption(
+                start=start,
+                end=end,
+            )
         else:
-            self.results["p"] = pd.Series(data=0, index=pd.date_range(start=start, end=end, freq=self.freq, tz=self.tz))
+            self.results["p"] = pd.Series(data=0,
+                                          index=pd.date_range(start=start,
+                                                              end=end,
+                                                              freq=self.freq,
+                                                              tz=self.tz))
 
-    def generic_consumption(self,
-                            start: datetime = None,
-                            end: datetime = None,):
-        series = pd.Series(data=0, index=pd.date_range(start=start, end=end, freq=self.freq, tz=self.tz))
+    def generic_consumption(
+        self,
+        start: datetime = None,
+        end: datetime = None,
+    ):
+        """
+        This method implements a generic consumption in kW.
+
+        Parameters
+        ----------
+        start : datetime
+            Start of the simulation.
+        end : datetime
+            End of the simulation.
+        """
+        series = pd.Series(data=0,
+                           index=pd.date_range(start=start,
+                                               end=end,
+                                               freq=self.freq,
+                                               tz=self.tz))
         return series

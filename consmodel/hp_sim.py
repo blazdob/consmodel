@@ -6,6 +6,7 @@ import numpy as np
 from consmodel.utils.st_types import HPType
 from consmodel.base_model import BaseModel
 
+
 class HP(BaseModel):
     """
     Class to represent a heat pump object.
@@ -31,26 +32,29 @@ class HP(BaseModel):
     -------
 
     """
-    def __init__(self,
-                lat,
-                lon,
-                alt,
-                index: int = 0,
-                name: str = "HP_default",
-                tz: str = None,
-                use_utc: bool = False,
-                st_type: str = None,
-                freq: str = "15min",):
+
+    def __init__(
+        self,
+        lat,
+        lon,
+        alt,
+        index: int = 0,
+        name: str = "HP_default",
+        tz: str = None,
+        use_utc: bool = False,
+        st_type: str = None,
+        freq: str = "15min",
+    ):
         super().__init__(index, lat, lon, alt, name, tz, use_utc, freq)
         if st_type is None:
             self.hp_type = HPType()
         else:
             self.hp_type = HPType(st_type)
-        
+
     def model(self,
-            wanted_temp: float,
-            hp_type: str = "Generic",
-            hp_subtype: str = "Outdoor Air / Water (regulated)"):
+              wanted_temp: float,
+              hp_type: str = "Generic",
+              hp_subtype: str = "Outdoor Air / Water (regulated)"):
         """
         Apply the heat pump model to the weather data.
 
@@ -61,13 +65,18 @@ class HP(BaseModel):
 
         """
 
-        parameters = hpl.get_parameters(hp_type, group_id=hp_subtype, t_in=-7, t_out=40, p_th=10000)
+        parameters = hpl.get_parameters(hp_type,
+                                        group_id=hp_subtype,
+                                        t_in=-7,
+                                        t_out=40,
+                                        p_th=10000)
         hp = hpl.HeatPump(parameters)
         results = hp.simulate(t_in_primary=self.results['temp'].values,
-                            t_in_secondary=np.array([wanted_temp]*len(self.results)),
-                            t_amb=self.results['temp'].values,
-                            mode=1)
-        output=pd.DataFrame.from_dict(results)
+                              t_in_secondary=np.array([wanted_temp] *
+                                                      len(self.results)),
+                              t_amb=self.results['temp'].values,
+                              mode=1)
+        output = pd.DataFrame.from_dict(results)
         output.index = self.results.index
         # concatenate the results and output
         self.results = pd.concat([self.results, output], axis=1)
@@ -75,15 +84,15 @@ class HP(BaseModel):
         self.results.drop(columns=['temp'], inplace=True)
         return self.results
 
-
-    def simulate(self,
-                wanted_temp: float,
-                start: datetime = None,
-                end: datetime = None,
-                freq: str = None,
-                year: int = None,
-                hp_type: str = "Outdoor Air / Water (regulated)",
-                ):
+    def simulate(
+        self,
+        wanted_temp: float,
+        start: datetime = None,
+        end: datetime = None,
+        freq: str = None,
+        year: int = None,
+        hp_type: str = "Outdoor Air / Water (regulated)",
+    ):
         """
         Simulate the heat pump for a given time period.
 
@@ -113,9 +122,11 @@ class HP(BaseModel):
         hp_type_id = self.hp_type.types[hp_type]["group_id"]
         self.model(wanted_temp, "Generic", hp_type_id)
         self.results.rename(columns={"P_el": "p"}, inplace=True)
-        self.results["p"] = self.results["p"]/1000
-        self.results = self.results[self.results.index >= start.tz_localize(self.tz)]
-        self.results = self.results[self.results.index <= end.tz_localize(self.tz)]
+        self.results["p"] = self.results["p"] / 1000
+        self.results = self.results[self.results.index >= start.tz_localize(
+            self.tz)]
+        self.results = self.results[self.results.index <= end.tz_localize(
+            self.tz)]
 
         self.timeseries = self.results["p"]
         return self.timeseries
