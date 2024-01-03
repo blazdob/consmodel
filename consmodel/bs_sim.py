@@ -210,7 +210,11 @@ class BS(BaseModel):
             self.current_e_kwh += p_kw * dt
         else:
             # give a warning that the battery can not be charged more
-            self.current_p_kw = (self.max_e_kwh - self.current_e_kwh) / dt
+            try:
+                self.current_p_kw = (self.max_e_kwh - self.current_e_kwh) / dt
+            except ZeroDivisionError:
+                # Handle division by zero error here
+                self.current_p_kw = 0.
             self.current_e_kwh = self.max_e_kwh
             # raise warning
             warnings.warn(

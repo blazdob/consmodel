@@ -285,7 +285,9 @@ class PV(BaseModel):
         # parameter that is used to mask out the data
         # when the weather condition code is worse than Overcast
         if endpoint == "meteostat":
-            print("this works only on the grand scale not on the micro level.")
+            print(
+                "This meteostat library works only on the grand scale not on the micro level, use open-meteo."
+            )
             self.results["coco_mask"] = self.results["coco"].apply(
                 lambda x: 1 if x < 2.5 else (np.random.uniform(0.4, 0.8)
                                              if x < 4.5 else 0.3))
@@ -557,8 +559,12 @@ class PV(BaseModel):
 
         self.get_irradiance_data(start, end, model, endpoint)
         self.get_weather_data(start, end)
-        self.model(pv_size * 1000, consider_cloud_cover, tilt, orient,
-                   endpoint)
+        self.model(pv_size=pv_size * 1000,
+                   consider_cloud_cover=consider_cloud_cover,
+                   tilt=tilt,
+                   orient=orient,
+                   pv_efficiency=1100.,
+                   endpoint=endpoint)
         self.results.rename(columns={"p_mp": "p"}, inplace=True)
         self.results["p"] = self.results["p"] / 1000
         self.results = self.results[self.results.index >= start.tz_localize(
