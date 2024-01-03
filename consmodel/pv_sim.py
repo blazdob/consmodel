@@ -174,11 +174,13 @@ class PV(BaseModel):
 
         return self.results
 
-    def get_irradiance_data(self,
-                            start,
-                            end,
-                            model: str = 'ineichen',
-                            endpoint: str = 'meteostat'):
+    def get_irradiance_data(
+        self,
+        start,
+        end,
+        model: str = 'ineichen',
+        endpoint: str = 'meteostat',
+    ):
         """
         INPUT:
         Function takes metadata dictionary as an input and includes the following keys:
@@ -213,13 +215,15 @@ class PV(BaseModel):
             })
         return self.results
 
-    def model(self,
-              pv_size: float = 0.,
-              consider_cloud_cover: bool = False,
-              tilt: int = 35,
-              orient: int = 180,
-              pv_efficiency: float = 1100.,
-              endpoint='meteostat'):
+    def model(
+        self,
+        pv_size: float = 0.,
+        consider_cloud_cover: bool = False,
+        tilt: int = 35,
+        orient: int = 180,
+        pv_efficiency: float = 1100.,
+        endpoint='meteostat',
+    ):
         """
         Function takes metadata dictionary as an input and includes the following keys:
 
@@ -306,8 +310,16 @@ class PV(BaseModel):
         return self.results
 
     # @classmethod
-    def pvefficiency_adr(self, effective_irradiance, temp_cell, k_a, k_d, tc_d,
-                         k_rs, k_rsh):
+    def pvefficiency_adr(
+        self,
+        effective_irradiance,
+        temp_cell,
+        k_a,
+        k_d,
+        tc_d,
+        k_rs,
+        k_rsh,
+    ):
         """
         Calculate PV module efficiency using the ADR model.
         The efficiency varies with irradiance and operating temperature
