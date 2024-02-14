@@ -17,3 +17,5 @@ class TestHP(unittest.TestCase):
             year=2022,
         )
         self.assertEqual(timeseries.sum(), 61197.18445502053)
+
+    

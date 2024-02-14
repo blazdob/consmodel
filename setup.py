@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="consmodel",
-    version="0.1.4",
+    version="0.1.5",
     author="Blaž Dobravec",
     author_email="blaz@dobravec.si",
     description=

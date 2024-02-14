@@ -286,7 +286,7 @@ class PV(BaseModel):
         # when the weather condition code is worse than Overcast
         if endpoint == "meteostat":
             print(
-                "This meteostat library works only on the grand scale not on the micro level, use open-meteo."
+                "This meteostat library works only on the grand scale not on the micro level, use open-meteo if needed very precise."
             )
             self.results["coco_mask"] = self.results["coco"].apply(
                 lambda x: 1 if x < 2.5 else (np.random.uniform(0.4, 0.8)
@@ -556,7 +556,6 @@ class PV(BaseModel):
             pd.Series of the simulated power values in kW.
         """
         start, end = self.handle_time_format(freq, start, end, year)
-
         self.get_irradiance_data(start, end, model, endpoint)
         self.get_weather_data(start, end)
         self.model(pv_size=pv_size * 1000,
