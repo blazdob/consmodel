@@ -201,10 +201,17 @@ class BaseModel(ABC):
 
         # if end is over an hour then round up to the next hour
         if end.minute > 0 or end.second > 0 or end.microsecond > 0:
-            end = end.replace(hour=end.hour + 1,
+            if end.hour != 23:
+                end = end.replace(hour=end.hour + 1,
                               minute=0,
                               second=0,
                               microsecond=0)
+            else:
+                end = end.replace(hour=0,
+                              minute=0,
+                              second=0,
+                              microsecond=0)
+                end = end + pd.Timedelta(days=1)
 
         location = Point(self.lat, self.lon, self.alt)
         weather_data = Hourly(location, start, end, self.tz)
