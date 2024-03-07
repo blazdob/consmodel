@@ -294,7 +294,7 @@ class BS(BaseModel):
                         self.results.loc[key, "battery_minus"] = -self.charge_amount
                     lst.append(self.current_e_kwh)
             elif control_type == "installed_power":
-                p_limit = round(self.get_min_p_lim(), 1)
+                p_limit = round(self.get_min_p_lim()+ 0.05, 1)
                 self.curr_limit = p_limit
                 self.hard_reset()
                 for key, df_tmp in self.results.iterrows():
