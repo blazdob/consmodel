@@ -164,7 +164,7 @@ class BS(BaseModel):
     def max_e_kwh(self, max_e_kwh):
         if not isinstance(max_e_kwh, float):
             raise TypeError("Max_e_kwh has to be a float.")
-        if max_e_kwh < 0:
+        if max_e_kwh <= 0:
             raise ValueError("Max_e_kwh has to be positive.")
         self._max_e_kwh = max_e_kwh
 
