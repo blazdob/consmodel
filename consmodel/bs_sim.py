@@ -7,10 +7,10 @@ This module contains the BS class.
 import warnings
 from scipy import optimize
 import pandas as pd
-
 from consmodel.utils.st_types import StorageType
 from consmodel.base_model import BaseModel
-
+from utils.tariffsys_utils import individual_tariff_times
+import numpy as np
 
 class BS(BaseModel):
     """
@@ -83,6 +83,7 @@ class BS(BaseModel):
         self.charge_amount = 0.
         self.discharge_amount = 0.
         self.curr_limit = 0.
+        self.p_limits = []
 
     def __repr__(self):
         return f"BS model(index={self.index}, name={self.name})"
@@ -255,7 +256,7 @@ class BS(BaseModel):
         Parameters
         ----------
         control_type : str
-            control_type of simulation, where options are "production_saving" and "installed_power".
+            control_type of simulation, where options are "production_saving", block_power_reduction and "installed_power".
         p_kw : pd.DataFrame()
             Power in kW in 15 min intervals where the index is the timestamp.
             in a format:
@@ -272,7 +273,7 @@ class BS(BaseModel):
         self.results = p_kw
         self.results["battery_plus"] = 0.
         self.results["battery_minus"] = 0.
-
+        print("Starting simulation")
         if control_type == "production_saving":
             for key, df_tmp in self.results.iterrows():
                 # we have some consumption
@@ -342,6 +343,49 @@ class BS(BaseModel):
                         # we have a full battery
                         pass
                 lst.append(self.current_e_kwh)
+
+        elif control_type == "block_power_reduction":
+            # Find installed power limits for every block
+            print("Finding optimal power limits for every block")            
+            dates = np.array(list(self.results.index))
+            tariffs = individual_tariff_times(dates)
+            blocks = np.argmax(tariffs, axis=0) + 1 
+            self.results["block"] = blocks
+            self.p_limits = self.find_p_limits()
+            lst = []
+            self.hard_reset()
+            for key, df_tmp in self.results.iterrows():
+                p_limit = self.p_limits[int(df_tmp.block)-1]
+                if df_tmp.p > p_limit:
+                    if self.current_e_kwh > 0:
+                        # if battery is not empty
+                        self.discharge_amount = float(
+                            min(df_tmp.p - p_limit, self.max_discharge_p_kw))
+                        if self.current_e_kwh < self.discharge_amount * 0.25:
+                            self.discharge_amount = self.current_e_kwh * 4
+                        self.discharge(self.discharge_amount, 0.25)
+                        self.results.loc[
+                            key, "battery_plus"] = self.discharge_amount
+                    else:
+                        # we have an empty battery
+                        pass
+                # charging battery
+                else:
+                    excess_power = p_limit - df_tmp.p
+                    if self.current_e_kwh < self._max_e_kwh:
+                        self.charge_amount = min(excess_power,
+                                                 self.max_charge_p_kw)
+                        if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
+                            self.charge_amount = (self.max_e_kwh -
+                                                  self.current_e_kwh) * 4
+                        self.results.loc[key,
+                                         "battery_minus"] = -self.charge_amount
+                        self.charge(self.charge_amount, 0.25)
+                    else:
+                        # we have a full battery
+                        pass
+                lst.append(self.current_e_kwh)
+            
         elif control_type == "5Tariff_manoeuvering":
             for key, df_tmp in self.results.iterrows():
                 hour = (key - pd.Timedelta(1, "min")).hour
@@ -390,6 +434,7 @@ class BS(BaseModel):
         p_kw: pd.DataFrame() = None,
         control_type: str = "production_saving",
     ):
+        print("Simulating the battery")
         self.hard_reset()
         self.model(control_type=control_type, p_kw=p_kw)
         self.timeseries = self.results["p_after"]
@@ -506,3 +551,120 @@ class BS(BaseModel):
         self.max_discharge_p_kw = storage_type.max_discharge_p_kw
         self.name = storage_type.name
         self.hard_reset()
+
+    def are_p_limits_posible(self, p_limits, max_soc = 1.):
+        """
+        etermine if the p_limits are possible to achieve with the battery
+        Args:
+        --------
+        batt: BatteryStorage object
+        p_limits: list of floats, limit powers for every block
+        """
+        for _, df_tmp in self.results.iterrows():
+            # lower the peak
+            p_limit = p_limits[int(df_tmp.block)-1]
+            if df_tmp.p > p_limit:
+                # if battery is not empty
+                if self.current_e_kwh >= 0:
+                    if df_tmp.p - p_limit > self.max_discharge_p_kw:
+                        # not enough max output
+                        return(-1)
+                    # Lower te peak till p_limit
+                    needed_output = float(df_tmp.p - p_limit)
+                    if self.current_e_kwh < needed_output * 0.25:
+                        # not enough energy
+                        return(-1)
+                    self.discharge_amount = needed_output
+                    self.discharge(self.discharge_amount, 0.25)
+                else:
+                    # we have an empty battery
+                    return(-1)
+            else:
+                # excess power to charge the battery
+                diff = p_limit - df_tmp.p
+                self.charge_amount = float(min(diff, self.max_charge_p_kw))
+                if self.current_e_kwh < self.max_e_kwh*max_soc:
+                    if self.current_e_kwh + self.charge_amount * 0.25 > self.max_e_kwh*max_soc:
+                        self.charge_amount = float(self.max_e_kwh*max_soc -
+                                                   self.current_e_kwh) * 4
+                    self.charge(self.charge_amount, 0.25)
+                else:
+                    pass
+        return(1)
+        
+    def find_block_p_limit(self, p_limits, block, p_limits_orig= None):
+
+        max_bound = p_limits[block-1]
+        min_bound = p_limits_orig[block-1]- self.max_discharge_p_kw-1
+        if block == 1:
+            function = lambda x: self.are_p_limits_posible([x if i == block - 1 else p_limits[i] for i in range(5)], max_soc=0.95)
+        else:
+            function = lambda x: self.are_p_limits_posible([x if i == block - 1 else p_limits[i] for i in range(5)])
+        root = optimize.bisect(function,
+                               min_bound,
+                               max_bound,
+                               xtol=0.05)
+        return(root)
+    
+    def get_max_p_limits(self):
+        """
+        Get the maximum possible p_limits for the battery.
+        Args:
+        --------
+        batt: BatteryStorage object
+
+        Returns:
+        --------
+        p_limits: list of floats, limit powers for every block, considering the fact that the powers in the higher blocks must not be lower than in the lower ones.
+        p_limits_orig: list of floats, limit powers for every block, without considering the fact that the powers in the higher blocks must not be lower than in the lower ones.
+        """
+        for block in self.results["block"].unique():
+            p_limits = self.results[self.results["block"] == block]["p"].max()
+
+        p_limits = [self.results[self.results["block"] == block]["p"].max() for block in range(1, 6)]
+        #replace nan with 0
+        p_limits_orig = [0 if np.isnan(x) else x for x in p_limits]
+
+        p_limits = p_limits_orig.copy()
+        current_max = 0
+        for i in range(5):
+            if p_limits[i] < current_max:
+                p_limits[i] = current_max
+            else:
+                current_max = p_limits[i]
+        return p_limits, p_limits_orig
+    
+    def find_p_limits(self):
+        """
+        Find the optimal p_limits for the battery
+        Args:
+        --------
+        batt: BatteryStorage object
+
+        Returns:
+        --------
+        p_limits: list of floats, limit powers for every block
+        --------
+        First, we calculate to what extent we can reduce the power consumption in the 
+        first block without increasing the power in the other blocks. 
+        Then, considering the calculated power in the first block, 
+        we calculate the power for the second block. We repeat this process for all five blocks
+
+        """
+        p_limits, p_limits_orig = self.get_max_p_limits()
+
+        for block in range(1, 6):
+            if block == 1:
+                p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig) + 0.1, 1)
+                p_limits[0] = p_limit
+            else:
+                p_limits_min = p_limits.copy()
+                p_limits_min[block-1] = p_limits[block-2]
+                if self.are_p_limits_posible(p_limits_min) == 1:
+                    p_limits[block-1] = p_limits[block-2]
+                else:
+                    p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig) + 0.1, 1)
+                    p_limits[block-1] = p_limit
+
+        return(p_limits)
+    
