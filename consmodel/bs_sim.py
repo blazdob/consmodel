@@ -7,10 +7,12 @@ This module contains the BS class.
 import warnings
 from scipy import optimize
 import pandas as pd
+import numpy as np
 from consmodel.utils.st_types import StorageType
 from consmodel.base_model import BaseModel
 from utils.tariffsys_utils import individual_tariff_times
-import numpy as np
+from utils.utils import extract_first_date_of_month
+
 
 class BS(BaseModel):
     """
@@ -385,7 +387,53 @@ class BS(BaseModel):
                         # we have a full battery
                         pass
                 lst.append(self.current_e_kwh)
+        elif control_type == "monthly_block_power_reduction":
+            dates = np.array(list(self.results.index))
+            tariffs = individual_tariff_times(dates)
+            blocks = np.argmax(tariffs, axis=0) + 1 
+            self.results["block"] = blocks
+            first_dates = extract_first_date_of_month(self.results)
+            self.results["p_limit"] = 0
+            for date in first_dates:
+                month_df = self.results[(((self.results.index- pd.Timedelta(minutes= 15)).month ) == date.month) & ((self.results.index- pd.Timedelta(minutes= 15)).year == date.year)]
+                self.p_limits = self.find_p_limits(month_df = month_df)               
+                for block in range(1, 6):
+                    self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year) & (self.results.block == block), "p_limit"] = self.p_limits[block-1]
             
+            lst = []
+            self.hard_reset()
+            for key, df_tmp in self.results.iterrows():
+                p_limit = df_tmp.p_limit
+                if df_tmp.p > p_limit:
+                    if self.current_e_kwh > 0:
+                        # if battery is not empty
+                        self.discharge_amount = float(
+                            min(df_tmp.p - p_limit, self.max_discharge_p_kw))
+                        if self.current_e_kwh < self.discharge_amount * 0.25:
+                            self.discharge_amount = self.current_e_kwh * 4
+                        self.discharge(self.discharge_amount, 0.25)
+                        self.results.loc[
+                            key, "battery_plus"] = self.discharge_amount
+                    else:
+                        # we have an empty battery
+                        pass
+                # charging battery
+                else:
+                    excess_power = p_limit - df_tmp.p
+                    if self.current_e_kwh < self._max_e_kwh:
+                        self.charge_amount = min(excess_power,
+                                                 self.max_charge_p_kw)
+                        if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
+                            self.charge_amount = (self.max_e_kwh -
+                                                  self.current_e_kwh) * 4
+                        self.results.loc[key,
+                                         "battery_minus"] = -self.charge_amount
+                        self.charge(self.charge_amount, 0.25)
+                    else:
+                        # we have a full battery
+                        pass
+                lst.append(self.current_e_kwh)
+
         elif control_type == "5Tariff_manoeuvering":
             for key, df_tmp in self.results.iterrows():
                 hour = (key - pd.Timedelta(1, "min")).hour
@@ -552,7 +600,7 @@ class BS(BaseModel):
         self.name = storage_type.name
         self.hard_reset()
 
-    def are_p_limits_posible(self, p_limits, max_soc = 1.):
+    def are_p_limits_posible(self, p_limits, max_soc = 1., month_df = None):
         """
         etermine if the p_limits are possible to achieve with the battery
         Args:
@@ -560,7 +608,13 @@ class BS(BaseModel):
         batt: BatteryStorage object
         p_limits: list of floats, limit powers for every block
         """
-        for _, df_tmp in self.results.iterrows():
+        print(p_limits, len(month_df))
+        if month_df is None:
+            df = self.results
+        else:
+            df = month_df
+        self.hard_reset()
+        for _, df_tmp in df.iterrows():
             # lower the peak
             p_limit = p_limits[int(df_tmp.block)-1]
             if df_tmp.p > p_limit:
@@ -590,38 +644,47 @@ class BS(BaseModel):
                     self.charge(self.charge_amount, 0.25)
                 else:
                     pass
+        print(1)
         return(1)
         
-    def find_block_p_limit(self, p_limits, block, p_limits_orig= None):
+    def find_block_p_limit(self, p_limits, block, p_limits_orig= None, month_df = None):
 
         max_bound = p_limits[block-1]
+        if p_limits_orig is None:
+            p_limits_orig = p_limits
+        
         min_bound = p_limits_orig[block-1]- self.max_discharge_p_kw-1
         if block == 1:
-            function = lambda x: self.are_p_limits_posible([x if i == block - 1 else p_limits[i] for i in range(5)], max_soc=0.95)
+            function = lambda x: self.are_p_limits_posible([x if i == block - 1 else p_limits[i] for i in range(5)], max_soc=0.95, month_df = month_df)
         else:
-            function = lambda x: self.are_p_limits_posible([x if i == block - 1 else p_limits[i] for i in range(5)])
+            function = lambda x: self.are_p_limits_posible([x if i == block - 1 else p_limits[i] for i in range(5)], month_df = month_df)
         root = optimize.bisect(function,
                                min_bound,
                                max_bound,
                                xtol=0.05)
         return(root)
     
-    def get_max_p_limits(self):
+    def get_max_p_limits(self, month_df = None):
         """
         Get the maximum possible p_limits for the battery.
         Args:
         --------
         batt: BatteryStorage object
+        month_df: pd.DataFrame, dataframe with month data for month block power reduction
 
         Returns:
         --------
         p_limits: list of floats, limit powers for every block, considering the fact that the powers in the higher blocks must not be lower than in the lower ones.
         p_limits_orig: list of floats, limit powers for every block, without considering the fact that the powers in the higher blocks must not be lower than in the lower ones.
         """
-        for block in self.results["block"].unique():
-            p_limits = self.results[self.results["block"] == block]["p"].max()
+        if month_df is None:
+            df = self.results
+        else:
+            df = month_df
+        for block in df["block"].unique():
+            p_limits = df[df["block"] == block]["p"].max()
 
-        p_limits = [self.results[self.results["block"] == block]["p"].max() for block in range(1, 6)]
+        p_limits = [df[df["block"] == block]["p"].max() for block in range(1, 6)]
         #replace nan with 0
         p_limits_orig = [0 if np.isnan(x) else x for x in p_limits]
 
@@ -634,13 +697,13 @@ class BS(BaseModel):
                 current_max = p_limits[i]
         return p_limits, p_limits_orig
     
-    def find_p_limits(self):
+    def find_p_limits(self, month_df = None):
         """
         Find the optimal p_limits for the battery
         Args:
         --------
         batt: BatteryStorage object
-
+        month_df: pd.DataFrame, dataframe with month data for month block power reduction
         Returns:
         --------
         p_limits: list of floats, limit powers for every block
@@ -651,19 +714,27 @@ class BS(BaseModel):
         we calculate the power for the second block. We repeat this process for all five blocks
 
         """
-        p_limits, p_limits_orig = self.get_max_p_limits()
-
+        p_limits, p_limits_orig = self.get_max_p_limits(month_df = month_df)
+        print(month_df)
+        if month_df is None:
+            df = self.results
+        else:
+            df = month_df
         for block in range(1, 6):
             if block == 1:
-                p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig) + 0.1, 1)
-                p_limits[0] = p_limit
+                if len(df[df["block"] == block]) > 0:                    
+                    p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig, month_df = month_df) + 0.1, 1)
+                    p_limits[0] = p_limit
+                else:
+                    p_limits[0] = 0
             else:
                 p_limits_min = p_limits.copy()
                 p_limits_min[block-1] = p_limits[block-2]
-                if self.are_p_limits_posible(p_limits_min) == 1:
+                # If it is possible, that p_limit is the same as in the previous block we take it
+                if self.are_p_limits_posible(p_limits_min, month_df= month_df) == 1:
                     p_limits[block-1] = p_limits[block-2]
                 else:
-                    p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig) + 0.1, 1)
+                    p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig, month_df=month_df) + 0.1, 1)
                     p_limits[block-1] = p_limit
 
         return(p_limits)
