@@ -338,7 +338,7 @@ class BS(BaseModel):
                 for block in range(1, 6):
                     self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year) & (self.results.block == block), "p_limit"] = self.p_limits[block-1]
             lst = self.simulate_p_limit()
-        
+
         elif control_type == "5Tariff_manoeuvering":
             for key, df_tmp in self.results.iterrows():
                 hour = (key - pd.Timedelta(1, "min")).hour
@@ -512,7 +512,6 @@ class BS(BaseModel):
         batt: BatteryStorage object
         p_limits: list of floats, limit powers for every block
         """
-        print(p_limits, len(month_df))
         if month_df is None:
             df = self.results
         else:
@@ -618,7 +617,6 @@ class BS(BaseModel):
 
         """
         p_limits, p_limits_orig = self.get_max_p_limits(month_df = month_df)
-        print(month_df)
         if month_df is None:
             df = self.results
         else:
