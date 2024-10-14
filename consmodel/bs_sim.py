@@ -274,7 +274,6 @@ class BS(BaseModel):
         self.results = p_kw
         self.results["battery_plus"] = 0.
         self.results["battery_minus"] = 0.
-        print("Starting simulation")
         if control_type == "production_saving":
             for key, df_tmp in self.results.iterrows():
                 # we have some consumption
@@ -312,39 +311,9 @@ class BS(BaseModel):
                 lst.append(self.current_e_kwh)
         elif control_type == "installed_power":
             p_limit = round(self.get_min_p_lim(), 1)
+            self.results["p_limit"] = p_limit
             self.curr_limit = p_limit
-            self.hard_reset()
-            for key, df_tmp in self.results.iterrows():
-                if df_tmp.p > p_limit:
-                    if self.current_e_kwh > 0:
-                        # if battery is not empty
-                        self.discharge_amount = float(
-                            min(df_tmp.p - p_limit, self.max_discharge_p_kw))
-                        if self.current_e_kwh < self.discharge_amount * 0.25:
-                            self.discharge_amount = self.current_e_kwh * 4
-                        self.discharge(self.discharge_amount, 0.25)
-                        self.results.loc[
-                            key, "battery_plus"] = self.discharge_amount
-                    else:
-                        # we have an empty battery
-                        pass
-                # charging battery
-                else:
-                    excess_power = p_limit - df_tmp.p
-                    if self.current_e_kwh < self._max_e_kwh:
-                        self.charge_amount = min(excess_power,
-                                                 self.max_charge_p_kw)
-                        if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
-                            self.charge_amount = (self.max_e_kwh -
-                                                  self.current_e_kwh) * 4
-                        self.results.loc[key,
-                                         "battery_minus"] = -self.charge_amount
-                        self.charge(self.charge_amount, 0.25)
-                    else:
-                        # we have a full battery
-                        pass
-                lst.append(self.current_e_kwh)
-
+            lst = self.simulate_p_limit()
         elif control_type == "block_power_reduction":
             # Find installed power limits for every block      
             dates = np.array(list(self.results.index))
@@ -352,39 +321,10 @@ class BS(BaseModel):
             blocks = np.argmax(tariffs, axis=0) + 1 
             self.results["block"] = blocks
             self.p_limits = self.find_p_limits()
-            lst = []
-            self.hard_reset()
-            for key, df_tmp in self.results.iterrows():
-                p_limit = self.p_limits[int(df_tmp.block)-1]
-                if df_tmp.p > p_limit:
-                    if self.current_e_kwh > 0:
-                        # if battery is not empty
-                        self.discharge_amount = float(
-                            min(df_tmp.p - p_limit, self.max_discharge_p_kw))
-                        if self.current_e_kwh < self.discharge_amount * 0.25:
-                            self.discharge_amount = self.current_e_kwh * 4
-                        self.discharge(self.discharge_amount, 0.25)
-                        self.results.loc[
-                            key, "battery_plus"] = self.discharge_amount
-                    else:
-                        # we have an empty battery
-                        pass
-                # charging battery
-                else:
-                    excess_power = p_limit - df_tmp.p
-                    if self.current_e_kwh < self._max_e_kwh:
-                        self.charge_amount = min(excess_power,
-                                                 self.max_charge_p_kw)
-                        if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
-                            self.charge_amount = (self.max_e_kwh -
-                                                  self.current_e_kwh) * 4
-                        self.results.loc[key,
-                                         "battery_minus"] = -self.charge_amount
-                        self.charge(self.charge_amount, 0.25)
-                    else:
-                        # we have a full battery
-                        pass
-                lst.append(self.current_e_kwh)
+            self.results["p_limit"] = 0
+            for block in range(1, 6):
+                self.results.loc[self.results.block == block, "p_limit"] = self.p_limits[block-1]
+            lst = self.simulate_p_limit()
         elif control_type == "monthly_block_power_reduction":
             dates = np.array(list(self.results.index))
             tariffs = individual_tariff_times(dates)
@@ -397,41 +337,8 @@ class BS(BaseModel):
                 self.p_limits = self.find_p_limits(month_df = month_df)               
                 for block in range(1, 6):
                     self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year) & (self.results.block == block), "p_limit"] = self.p_limits[block-1]
-            
-            lst = []
-            self.hard_reset()
-            for key, df_tmp in self.results.iterrows():
-                p_limit = df_tmp.p_limit
-                if df_tmp.p > p_limit:
-                    if self.current_e_kwh > 0:
-                        # if battery is not empty
-                        self.discharge_amount = float(
-                            min(df_tmp.p - p_limit, self.max_discharge_p_kw))
-                        if self.current_e_kwh < self.discharge_amount * 0.25:
-                            self.discharge_amount = self.current_e_kwh * 4
-                        self.discharge(self.discharge_amount, 0.25)
-                        self.results.loc[
-                            key, "battery_plus"] = self.discharge_amount
-                    else:
-                        # we have an empty battery
-                        pass
-                # charging battery
-                else:
-                    excess_power = p_limit - df_tmp.p
-                    if self.current_e_kwh < self._max_e_kwh:
-                        self.charge_amount = min(excess_power,
-                                                 self.max_charge_p_kw)
-                        if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
-                            self.charge_amount = (self.max_e_kwh -
-                                                  self.current_e_kwh) * 4
-                        self.results.loc[key,
-                                         "battery_minus"] = -self.charge_amount
-                        self.charge(self.charge_amount, 0.25)
-                    else:
-                        # we have a full battery
-                        pass
-                lst.append(self.current_e_kwh)
-
+            lst = self.simulate_p_limit()
+        
         elif control_type == "5Tariff_manoeuvering":
             for key, df_tmp in self.results.iterrows():
                 hour = (key - pd.Timedelta(1, "min")).hour
@@ -641,8 +548,7 @@ class BS(BaseModel):
                     self.charge(self.charge_amount, 0.25)
                 else:
                     pass
-        print(1)
-        return(1)
+        return 1
         
     def find_block_p_limit(self, p_limits, block, p_limits_orig= None, month_df = None):
 
@@ -659,7 +565,7 @@ class BS(BaseModel):
                                min_bound,
                                max_bound,
                                xtol=0.05)
-        return(root)
+        return root
     
     def get_max_p_limits(self, month_df = None):
         """
@@ -734,5 +640,43 @@ class BS(BaseModel):
                     p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig, month_df=month_df) + 0.1, 1)
                     p_limits[block-1] = p_limit
 
-        return(p_limits)
+        return p_limits
+    
+    def simulate_p_limit(self):
+        """With already calculated p_limits, simulates the battery behaviour.
+        self.results["p_limit"] must be already defined"""
+        lst = []
+        self.hard_reset()
+        for key, df_tmp in self.results.iterrows():
+            p_limit = df_tmp.p_limit
+            if df_tmp.p > p_limit:
+                if self.current_e_kwh > 0:
+                    # if battery is not empty
+                    self.discharge_amount = float(
+                        min(df_tmp.p - p_limit, self.max_discharge_p_kw))
+                    if self.current_e_kwh < self.discharge_amount * 0.25:
+                        self.discharge_amount = self.current_e_kwh * 4
+                    self.discharge(self.discharge_amount, 0.25)
+                    self.results.loc[
+                        key, "battery_plus"] = self.discharge_amount
+                else:
+                    # we have an empty battery
+                    pass
+            # charging battery
+            else:
+                excess_power = p_limit - df_tmp.p
+                if self.current_e_kwh < self._max_e_kwh:
+                    self.charge_amount = min(excess_power,
+                                             self.max_charge_p_kw)
+                    if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
+                        self.charge_amount = (self.max_e_kwh -
+                                              self.current_e_kwh) * 4
+                    self.results.loc[key,
+                                     "battery_minus"] = -self.charge_amount
+                    self.charge(self.charge_amount, 0.25)
+                else:
+                    # we have a full battery
+                    pass
+            lst.append(self.current_e_kwh)
+        return lst
     
