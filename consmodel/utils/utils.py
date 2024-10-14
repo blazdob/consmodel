@@ -1,4 +1,5 @@
 import pandas as pd
+
 def extract_first_date_of_month(df):
     """Function returns list of first date of every month from the input dataframe."""
     # Convert the datetime column to datetime type

@@ -10,8 +10,7 @@ import pandas as pd
 import numpy as np
 from consmodel.utils.st_types import StorageType
 from consmodel.base_model import BaseModel
-from utils.tariffsys_utils import individual_tariff_times
-from utils.utils import extract_first_date_of_month
+from consmodel.utils import individual_tariff_times, extract_first_date_of_month
 
 
 class BS(BaseModel):
@@ -251,7 +250,7 @@ class BS(BaseModel):
 
     def model(self,
               control_type: str = "production_saving",
-              p_kw: pd.DataFrame() = None):
+              p_kw: pd.DataFrame = None):
         """
         Model the controller and run it.
 
@@ -259,7 +258,7 @@ class BS(BaseModel):
         ----------
         control_type : str
             control_type of simulation, where options are "production_saving", block_power_reduction and "installed_power".
-        p_kw : pd.DataFrame()
+        p_kw : pd.DataFrame
             Power in kW in 15 min intervals where the index is the timestamp.
             in a format:
             |      Timestamp      |     p      |
@@ -347,8 +346,7 @@ class BS(BaseModel):
                 lst.append(self.current_e_kwh)
 
         elif control_type == "block_power_reduction":
-            # Find installed power limits for every block
-            print("Finding optimal power limits for every block")            
+            # Find installed power limits for every block      
             dates = np.array(list(self.results.index))
             tariffs = individual_tariff_times(dates)
             blocks = np.argmax(tariffs, axis=0) + 1 
@@ -479,10 +477,9 @@ class BS(BaseModel):
 
     def simulate(
         self,
-        p_kw: pd.DataFrame() = None,
+        p_kw: pd.DataFrame = None,
         control_type: str = "production_saving",
     ):
-        print("Simulating the battery")
         self.hard_reset()
         self.model(control_type=control_type, p_kw=p_kw)
         self.timeseries = self.results["p_after"]
