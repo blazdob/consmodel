@@ -10,8 +10,7 @@ import pandas as pd
 import numpy as np
 from consmodel.utils.st_types import StorageType
 from consmodel.base_model import BaseModel
-from utils.tariffsys_utils import individual_tariff_times
-from utils.utils import extract_first_date_of_month
+from consmodel.utils import individual_tariff_times, extract_first_date_of_month
 
 
 class BS(BaseModel):
@@ -251,7 +250,7 @@ class BS(BaseModel):
 
     def model(self,
               control_type: str = "production_saving",
-              p_kw: pd.DataFrame() = None):
+              p_kw: pd.DataFrame = None):
         """
         Model the controller and run it.
 
@@ -259,7 +258,7 @@ class BS(BaseModel):
         ----------
         control_type : str
             control_type of simulation, where options are "production_saving", block_power_reduction and "installed_power".
-        p_kw : pd.DataFrame()
+        p_kw : pd.DataFrame
             Power in kW in 15 min intervals where the index is the timestamp.
             in a format:
             |      Timestamp      |     p      |
@@ -275,7 +274,6 @@ class BS(BaseModel):
         self.results = p_kw
         self.results["battery_plus"] = 0.
         self.results["battery_minus"] = 0.
-        print("Starting simulation")
         if control_type == "production_saving":
             for key, df_tmp in self.results.iterrows():
                 # we have some consumption
@@ -316,55 +314,8 @@ class BS(BaseModel):
             self.results["p_limit"] = p_limit
             self.curr_limit = p_limit
             lst = self.simulate_p_limit()
-            # self.hard_reset()
-            # for key, df_tmp in self.results.iterrows():
-            #     if df_tmp.p > p_limit:
-            #         if self.current_e_kwh > 0:
-            #             # if battery is not empty
-            #             self.discharge_amount = float(
-            #                 min(df_tmp.p - p_limit, self.max_discharge_p_kw))
-            #             if self.current_e_kwh < self.discharge_amount * 0.25:
-            #                 self.discharge_amount = self.current_e_kwh * 4
-            #             self.discharge(self.discharge_amount, 0.25)
-            #             self.results.loc[
-            #                 key, "battery_plus"] = self.discharge_amount
-            #         else:
-            #             # we have an empty battery
-            #             pass
-            #     # charging battery
-            #     else:
-            #         excess_power = p_limit - df_tmp.p
-            #         if self.current_e_kwh < self._max_e_kwh:
-            #             self.charge_amount = min(excess_power,
-            #                                      self.max_charge_p_kw)
-            #             if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
-            #                 self.charge_amount = (self.max_e_kwh -
-            #                                       self.current_e_kwh) * 4
-            #             self.results.loc[key,
-            #                              "battery_minus"] = -self.charge_amount
-            #             self.charge(self.charge_amount, 0.25)
-            #         else:
-            #             # we have a full battery
-            #             pass
-            #     lst.append(self.current_e_kwh)
-        elif control_type == "monthly_installed_power":
-            dates = np.array(list(self.results.index))
-            first_dates = extract_first_date_of_month(self.results)
-            self.results["p_limit"] = 0
-            for date in first_dates:
-                month_df = self.results[(((self.results.index- pd.Timedelta(minutes= 15)).month ) == date.month) 
-                                        & ((self.results.index- pd.Timedelta(minutes= 15)).year == date.year)]
-                p_limit = round(self.get_min_p_lim(month_df = month_df), 1)
-                
-                self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) 
-                                 & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year), "p_limit"] = p_limit
-                
-            print(self.results)
-            lst = self.simulate_p_limit()
-
         elif control_type == "block_power_reduction":
-            # Find installed power limits for every block
-            print("Finding optimal power limits for every block")            
+            # Find installed power limits for every block      
             dates = np.array(list(self.results.index))
             tariffs = individual_tariff_times(dates)
             blocks = np.argmax(tariffs, axis=0) + 1 
@@ -374,39 +325,6 @@ class BS(BaseModel):
             for block in range(1, 6):
                 self.results.loc[self.results.block == block, "p_limit"] = self.p_limits[block-1]
             lst = self.simulate_p_limit()
-            # lst = []
-            # self.hard_reset()
-            # for key, df_tmp in self.results.iterrows():
-            #     p_limit = self.p_limits[int(df_tmp.block)-1]
-            #     if df_tmp.p > p_limit:
-            #         if self.current_e_kwh > 0:
-            #             # if battery is not empty
-            #             self.discharge_amount = float(
-            #                 min(df_tmp.p - p_limit, self.max_discharge_p_kw))
-            #             if self.current_e_kwh < self.discharge_amount * 0.25:
-            #                 self.discharge_amount = self.current_e_kwh * 4
-            #             self.discharge(self.discharge_amount, 0.25)
-            #             self.results.loc[
-            #                 key, "battery_plus"] = self.discharge_amount
-            #         else:
-            #             # we have an empty battery
-            #             pass
-            #     # charging battery
-            #     else:
-            #         excess_power = p_limit - df_tmp.p
-            #         if self.current_e_kwh < self._max_e_kwh:
-            #             self.charge_amount = min(excess_power,
-            #                                      self.max_charge_p_kw)
-            #             if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
-            #                 self.charge_amount = (self.max_e_kwh -
-            #                                       self.current_e_kwh) * 4
-            #             self.results.loc[key,
-            #                              "battery_minus"] = -self.charge_amount
-            #             self.charge(self.charge_amount, 0.25)
-            #         else:
-            #             # we have a full battery
-            #             pass
-            #     lst.append(self.current_e_kwh)
         elif control_type == "monthly_block_power_reduction":
             dates = np.array(list(self.results.index))
             tariffs = individual_tariff_times(dates)
@@ -420,41 +338,28 @@ class BS(BaseModel):
                 print(self.p_limits)              
                 for block in range(1, 6):
                     self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year) & (self.results.block == block), "p_limit"] = self.p_limits[block-1]
-            
             lst = self.simulate_p_limit()
-            # lst = []
-            # self.hard_reset()
-            # for key, df_tmp in self.results.iterrows():
-            #     p_limit = df_tmp.p_limit
-            #     if df_tmp.p > p_limit:
-            #         if self.current_e_kwh > 0:
-            #             # if battery is not empty
-            #             self.discharge_amount = float(
-            #                 min(df_tmp.p - p_limit, self.max_discharge_p_kw))
-            #             if self.current_e_kwh < self.discharge_amount * 0.25:
-            #                 self.discharge_amount = self.current_e_kwh * 4
-            #             self.discharge(self.discharge_amount, 0.25)
-            #             self.results.loc[
-            #                 key, "battery_plus"] = self.discharge_amount
-            #         else:
-            #             # we have an empty battery
-            #             pass
-            #     # charging battery
-            #     else:
-            #         excess_power = p_limit - df_tmp.p
-            #         if self.current_e_kwh < self._max_e_kwh:
-            #             self.charge_amount = min(excess_power,
-            #                                      self.max_charge_p_kw)
-            #             if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
-            #                 self.charge_amount = (self.max_e_kwh -
-            #                                       self.current_e_kwh) * 4
-            #             self.results.loc[key,
-            #                              "battery_minus"] = -self.charge_amount
-            #             self.charge(self.charge_amount, 0.25)
-            #         else:
-            #             # we have a full battery
-            #             pass
-            #     lst.append(self.current_e_kwh)
+        elif control_type == "MT_VT_shifting":
+            # run the simulation where all the energy is transfered from VT to MT (a single cycle)
+            # MT = from 22 to 6 and VT = from 6 to 22
+            for key, df_tmp in self.results.iterrows():
+                hour = (key - pd.Timedelta(1, "min")).hour
+                if hour <= 5 or hour >= 22:
+                    self.charge_amount = float(
+                        min(self._max_e_kwh / 8,
+                            (self._max_e_kwh - self.current_e_kwh) * 4,
+                            self.max_charge_p_kw))
+                    self.charge(self.charge_amount, 0.25)
+                    self.discharge_amount = 0.
+                    self.results.loc[key, "battery_minus"] = -self.charge_amount
+                else:
+                    self.discharge_amount = float(
+                        min(self._max_e_kwh / 16,
+                            (self.current_e_kwh) * 4, self.max_discharge_p_kw))
+                    self.discharge(self.discharge_amount, 0.25)
+                    self.charge_amount = 0.
+                    self.results.loc[key, "battery_plus"] = self.discharge_amount
+                lst.append(self.current_e_kwh)
 
 
         elif control_type == "5Tariff_manoeuvering":
@@ -502,10 +407,9 @@ class BS(BaseModel):
 
     def simulate(
         self,
-        p_kw: pd.DataFrame() = None,
+        p_kw: pd.DataFrame = None,
         control_type: str = "production_saving",
     ):
-        print("Simulating the battery")
         self.hard_reset()
         self.model(control_type=control_type, p_kw=p_kw)
         self.timeseries = self.results["p_after"]
@@ -640,7 +544,6 @@ class BS(BaseModel):
         batt: BatteryStorage object
         p_limits: list of floats, limit powers for every block
         """
-        
         if month_df is None:
             df = self.results
         else:
@@ -654,17 +557,17 @@ class BS(BaseModel):
                 if self.current_e_kwh >= 0:
                     if df_tmp.p - p_limit > self.max_discharge_p_kw:
                         # not enough max output
-                        return(-1)
+                        return -1
                     # Lower te peak till p_limit
                     needed_output = float(df_tmp.p - p_limit)
                     if self.current_e_kwh < needed_output * 0.25:
                         # not enough energy
-                        return(-1)
+                        return -1
                     self.discharge_amount = needed_output
                     self.discharge(self.discharge_amount, 0.25)
                 else:
                     # we have an empty battery
-                    return(-1)
+                    return -1
             else:
                 # excess power to charge the battery
                 diff = p_limit - df_tmp.p
@@ -676,8 +579,8 @@ class BS(BaseModel):
                     self.charge(self.charge_amount, 0.25)
                 else:
                     pass
-        return(1)
-        
+        return 1
+
     def find_block_p_limit(self, p_limits, block, p_limits_orig= None, month_df = None):
 
         max_bound = p_limits[block-1]
@@ -693,7 +596,7 @@ class BS(BaseModel):
                                min_bound,
                                max_bound,
                                xtol=0.05)
-        return(root)
+        return root
     
     def get_max_p_limits(self, month_df = None):
         """
@@ -746,7 +649,6 @@ class BS(BaseModel):
 
         """
         p_limits, p_limits_orig = self.get_max_p_limits(month_df = month_df)
-        
         if month_df is None:
             df = self.results
         else:
@@ -768,7 +670,7 @@ class BS(BaseModel):
                     p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig, month_df=month_df) + 0.1, 1)
                     p_limits[block-1] = p_limit
 
-        return(p_limits)
+        return p_limits
     
     def simulate_p_limit(self):
         """With already calculated p_limits, simulates the battery behaviour.
@@ -808,3 +710,62 @@ class BS(BaseModel):
             lst.append(self.current_e_kwh)
         return lst
     
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    from tariffsys import Settlement
+    from copy import deepcopy
+
+    bs = BS(0, 0, 0, max_charge_p_kw=2000, max_discharge_p_kw=2000, max_e_kwh=4000)
+    p_kw = pd.read_csv("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/ostalo/xyz.csv", parse_dates=["date_time"])
+    # Test MT_VT_shifting
+    # set date_time to be index in bs.results
+    p_kw.set_index("date_time", inplace=True)
+    bs.simulate(p_kw, control_type="MT_VT_shifting")
+    # plot p and p_after
+    # set date_time to be index in bs.results
+    # bs.results.set_index("date_time", inplace=True)
+    plt.plot(bs.results.p_after[1000:1400])
+    plt.plot(bs.results.p[1000:1400])
+    # plot soc
+    plt.plot(bs.results.var_bat[1000:1400])
+    plt.legend(["p_after", "p", "soc"])
+    plt.show()
+
+    operating_hours = 2501 if 1 else 1
+
+    tech_df = pd.DataFrame({
+        "smm": [0],
+        "num_phases": [3],
+        "connected_power": [p_kw['p'].max()],
+        "consumer_type": [1],
+        "consumer_type_id": [4],
+        "reduced_network_fee": [0],
+        "operating_hours": [operating_hours],
+        "reduced_ove_spte": [0],
+        "connection_scheme": [0],
+        "community_consumption": [0],
+        "community_production": [0],
+        "storage": [0],
+        "billing_power": [p_kw['p'].max()],
+        "num_tariffs": [2],
+        "connection_type_id": [5 if 1 else 1]
+    })
+    s = Settlement()
+
+    s.calculate_settlement(smm=0, timeseries_data=p_kw, load_manually=True, tech_data=tech_df)
+    print("before:", s.output["ts_results"])
+    e_mt_original = sum(s.output["ts_results"]["e_mt"])
+    e_vt_original = sum(s.output["ts_results"]["e_vt"])
+    df_after = deepcopy(bs.results)
+    df_after["p"] = df_after["p_after"]
+    s.calculate_settlement(smm=0, timeseries_data=df_after, load_manually=True, tech_data=tech_df)
+    print("after:", s.output["ts_results"])
+    e_mt_after = sum(s.output["ts_results"]["e_mt"])
+    e_vt_after = sum(s.output["ts_results"]["e_vt"])
+
+    print("mt_diff:", e_mt_original - e_mt_after)
+    print("vt_diff:", e_vt_original - e_vt_after)
+    # calculate savings on (e_mt + e_vt) between the two scenarios
+    savings = (e_mt_original * 0.13 + e_vt_original * 0.18) - (e_mt_after * 0.13 + e_vt_after * 0.18)
+    print("savings:", savings)
