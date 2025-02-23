@@ -13,6 +13,334 @@ from consmodel.base_model import BaseModel
 from consmodel.utils import individual_tariff_times, extract_first_date_of_month
 
 
+from numba import njit
+
+
+@njit
+def jit_are_p_limits_possible(p_array, block_array, p_limits, current_e, max_charge, max_discharge, max_e, dt):
+    n = p_array.shape[0]
+    # Initialize a variable to hold the battery state (you may want an array if you need the entire state history)
+    for i in range(n):
+        # Get the relevant p_limit for this row (e.g., based on block)
+        current_p_limit = p_limits[int(block_array[i]) - 1]
+        if p_array[i] > current_p_limit:
+            if current_e >= 0:
+                if p_array[i] - current_p_limit > max_discharge:
+                    return -1
+                needed_output = p_array[i] - current_p_limit
+                if current_e < needed_output * dt:
+                    return -1
+                current_e -= needed_output * dt
+            else:
+                return -1
+        else:
+            diff = current_p_limit - p_array[i]
+            charge_amount = diff if diff < max_charge else max_charge
+            if current_e < max_e:
+                if current_e + charge_amount * dt > max_e:
+                    charge_amount = (max_e - current_e) / dt
+                current_e += charge_amount * dt
+    return 1
+
+from numba import njit
+import numpy as np
+
+@njit
+def jit_is_p_limit_possible(p_array, p_limit, current_e, max_charge, max_discharge, max_e, dt):
+    """
+    Determine if a single p_limit is possible, updating current_e along the way.
+    Returns 1 if possible, otherwise -1.
+    """
+    n = p_array.shape[0]
+    for i in range(n):
+        if p_array[i] > p_limit:
+            # battery must discharge
+            if current_e >= 0:
+                if p_array[i] - p_limit > max_discharge:
+                    return -1
+                needed_output = p_array[i] - p_limit
+                if current_e < needed_output * dt:
+                    return -1
+                current_e -= needed_output * dt
+            else:
+                return -1
+        else:
+            # battery can be charged
+            diff = p_limit - p_array[i]
+            # choose the smaller of the available difference or max_charge
+            charge_amount = diff if diff < max_charge else max_charge
+            if current_e < max_e:
+                if current_e + charge_amount * dt > max_e:
+                    charge_amount = (max_e - current_e) / dt
+                current_e += charge_amount * dt
+    return 1
+
+from numba import njit
+import numpy as np
+
+@njit
+def jit_simulate_p_limit(p_array, p_limit_array, dt, init_e, max_e, max_charge, max_discharge):
+    """
+    Simulate battery behavior over a time series for p_limit control.
+    
+    Parameters:
+      p_array       : 1D array of power values (kW) at each timestep.
+                      Positive values mean consumption.
+      p_limit_array : 1D array of p_limit values for each timestep.
+      dt            : Time step in hours (e.g. 0.25 for 15 minutes).
+      init_e        : Initial battery energy (kWh).
+      max_e         : Maximum battery capacity (kWh).
+      max_charge    : Maximum charging power (kW).
+      max_discharge : Maximum discharging power (kW).
+      
+    Returns:
+      battery_plus  : 1D array of discharge amounts (kW) at each timestep.
+      battery_minus : 1D array of charge amounts (kW) at each timestep.
+                      (Stored as positive values; caller can add sign if needed.)
+      energy_state  : 1D array of battery energy (kWh) after each timestep.
+    """
+    n = p_array.shape[0]
+    battery_plus = np.zeros(n)
+    battery_minus = np.zeros(n)
+    energy_state = np.empty(n)
+    current_e = init_e
+    
+    for i in range(n):
+        if p_array[i] > p_limit_array[i]:
+            # Discharging scenario (consumption exceeds limit)
+            if current_e > 0:
+                # Determine how much we can discharge this timestep.
+                discharge_amount = p_array[i] - p_limit_array[i]
+                if discharge_amount > max_discharge:
+                    discharge_amount = max_discharge
+                # If battery doesn't have enough energy for full discharge:
+                if current_e < discharge_amount * dt:
+                    discharge_amount = current_e / dt  # equivalent to current_e * (1/dt)
+                current_e -= discharge_amount * dt
+                battery_plus[i] = discharge_amount
+            else:
+                battery_plus[i] = 0.0
+        else:
+            # Charging scenario (available production exceeds consumption)
+            excess_power = p_limit_array[i] - p_array[i]
+            if current_e < max_e:
+                charge_amount = excess_power
+                if charge_amount > max_charge:
+                    charge_amount = max_charge
+                # Prevent overcharging:
+                if current_e + charge_amount * dt > max_e:
+                    charge_amount = (max_e - current_e) / dt
+                current_e += charge_amount * dt
+                battery_minus[i] = charge_amount
+            else:
+                battery_minus[i] = 0.0
+        energy_state[i] = current_e
+    return battery_plus, battery_minus, energy_state
+
+@njit
+def jit_simulate_MT_VT_shift(hours, dt, init_e, max_e, max_charge, max_discharge):
+    """
+    Simulate the battery behavior for MT/VT shifting.
+    
+    For hours <= 5 or >= 22 (i.e. nighttime) the battery charges:
+      charge_amount = min( max_e/8, (max_e - current_e)*4, max_charge )
+      current_e is increased by (charge_amount * dt)
+      
+    For hours between 6 and 21 (daytime) the battery discharges:
+      discharge_amount = min( max_e/16, (current_e)*4, max_discharge )
+      current_e is decreased by (discharge_amount * dt)
+      
+    Parameters:
+      hours       : 1D NumPy array of hour values for each timestep.
+      dt          : Time step in hours (e.g. 0.25 for 15 minutes).
+      init_e      : Initial battery energy (kWh).
+      max_e       : Maximum battery capacity (kWh).
+      max_charge  : Maximum charging power (kW).
+      max_discharge: Maximum discharging power (kW).
+      
+    Returns:
+      battery_plus  : Array of discharge amounts (kW) at each timestep.
+      battery_minus : Array of charge amounts (kW) at each timestep.
+                      (Positive values; caller may assign a negative sign as needed.)
+      energy_state  : Array of battery energy (kWh) after each timestep.
+    """
+    n = hours.shape[0]
+    battery_plus = np.zeros(n)
+    battery_minus = np.zeros(n)
+    energy_state = np.empty(n)
+    current_e = init_e
+
+    for i in range(n):
+        hr = hours[i]
+        if hr <= 5 or hr >= 22:
+            # Nighttime: charge the battery
+            # Compute candidate charge: max_e/8 and (max_e - current_e)*4
+            charge_amt = max_e / 8
+            cand = (max_e - current_e) * 4
+            if cand < charge_amt:
+                charge_amt = cand
+            if max_charge < charge_amt:
+                charge_amt = max_charge
+            current_e = current_e + charge_amt * dt
+            battery_minus[i] = charge_amt
+        else:
+            # Daytime: discharge the battery
+            discharge_amt = max_e / 16
+            cand = current_e * 4
+            if cand < discharge_amt:
+                discharge_amt = cand
+            if max_discharge < discharge_amt:
+                discharge_amt = max_discharge
+            current_e = current_e - discharge_amt * dt
+            battery_plus[i] = discharge_amt
+        energy_state[i] = current_e
+    return battery_plus, battery_minus, energy_state
+
+@njit
+def jit_simulate_5tariff(hours, dt, init_e, max_e, max_charge, max_discharge):
+    """
+    Simulate battery behavior for the 5Tariff_manoeuvering control strategy.
+    
+    For hours <= 5 or >= 22:
+      n_hours = 8, so candidate charge = min(max_e/8, (max_e - current_e)*4, max_charge)
+    For hours between 7 and 13:
+      n_hours = 7, so candidate discharge = min(max_e/7, current_e*4, max_discharge)
+    For hours 14 or 15:
+      n_hours = 2, so candidate charge = min(max_e/2, (max_e - current_e)*4, max_charge)
+    For hours between 16 and 19:
+      n_hours = 4, so candidate discharge = min(max_e/4, current_e*4, max_discharge)
+    Otherwise (e.g. between 5 and 7, or 20–21):
+      no battery operation is performed.
+      
+    Parameters:
+      hours      : 1D array of integer hour values for each timestep.
+      dt         : Time step in hours (e.g. 0.25 for 15 minutes).
+      init_e     : Initial battery energy (kWh).
+      max_e      : Maximum battery capacity (kWh).
+      max_charge : Maximum charging power (kW).
+      max_discharge: Maximum discharging power (kW).
+      
+    Returns:
+      battery_plus  : Array of discharge amounts (kW) at each timestep.
+      battery_minus : Array of charge amounts (kW) at each timestep.
+                      (Positive numbers; caller should negate for storage if needed.)
+      energy_state  : Array of battery energy (kWh) after each timestep.
+    """
+    n = hours.shape[0]
+    battery_plus = np.zeros(n)
+    battery_minus = np.zeros(n)
+    energy_state = np.empty(n)
+    current_e = init_e
+
+    for i in range(n):
+        hr = hours[i]
+        if hr <= 5 or hr >= 22:
+            # Nighttime: charge the battery
+            n_hours = 8.0
+            charge_amt = max_e / n_hours
+            # Adjust charge candidate by available headroom:
+            available = (max_e - current_e) * 4.0
+            if available < charge_amt:
+                charge_amt = available
+            if max_charge < charge_amt:
+                charge_amt = max_charge
+            # Update battery state:
+            current_e = current_e + charge_amt * dt
+            battery_minus[i] = charge_amt
+        elif hr >= 7 and hr <= 13:
+            # Morning: discharge the battery
+            n_hours = 7.0
+            discharge_amt = max_e / n_hours
+            available = current_e * 4.0
+            if available < discharge_amt:
+                discharge_amt = available
+            if max_discharge < discharge_amt:
+                discharge_amt = max_discharge
+            current_e = current_e - discharge_amt * dt
+            battery_plus[i] = discharge_amt
+        elif hr == 14 or hr == 15:
+            # Early afternoon: charge the battery
+            n_hours = 2.0
+            charge_amt = max_e / n_hours
+            available = (max_e - current_e) * 4.0
+            if available < charge_amt:
+                charge_amt = available
+            if max_charge < charge_amt:
+                charge_amt = max_charge
+            current_e = current_e + charge_amt * dt
+            battery_minus[i] = charge_amt
+        elif hr >= 16 and hr <= 19:
+            # Late afternoon: discharge the battery
+            n_hours = 4.0
+            discharge_amt = max_e / n_hours
+            available = current_e * 4.0
+            if available < discharge_amt:
+                discharge_amt = available
+            if max_discharge < discharge_amt:
+                discharge_amt = max_discharge
+            current_e = current_e - discharge_amt * dt
+            battery_plus[i] = discharge_amt
+        else:
+            # For other hours (e.g., between 5 and 7, or 20-21), do nothing.
+            pass
+
+        energy_state[i] = current_e
+    return battery_plus, battery_minus, energy_state
+
+@njit
+def jit_simulate_production_saving(p_array, dt, init_e, max_e, max_charge, max_discharge):
+    """
+    Simulate battery behavior for production saving control.
+    
+    Parameters:
+      p_array    : 1D array of power values (kW) at each timestep.
+                   (Positive values represent consumption.)
+      dt         : Time step in hours.
+      init_e     : Initial battery energy (kWh).
+      max_e      : Maximum battery capacity (kWh).
+      max_charge : Maximum charging power (kW).
+      max_discharge: Maximum discharging power (kW).
+    
+    Returns:
+      battery_plus  : Array of discharge amounts (kW) at each timestep.
+      battery_minus : Array of charge amounts (kW) at each timestep.
+                      (Positive values; production saving stores charging as a negative effect.)
+      energy_state  : Array of battery energy (kWh) after each timestep.
+    """
+    n = p_array.shape[0]
+    battery_plus = np.zeros(n)
+    battery_minus = np.zeros(n)
+    energy_state = np.empty(n)
+    current_e = init_e
+    
+    for i in range(n):
+        p = p_array[i]
+        if p > 0:
+            # Consumption: discharge battery
+            if current_e > 0:
+                # If enough energy for full discharge:
+                if current_e - dt * p > 0:
+                    discharge_amt = p if p < max_discharge else max_discharge
+                else:
+                    discharge_amt = max_discharge if max_discharge < 4 * current_e else 4 * current_e
+                current_e = current_e - discharge_amt * dt
+                battery_plus[i] = discharge_amt
+            else:
+                battery_plus[i] = 0.0
+        else:
+            # Production: p is negative; charge battery
+            available_power = -p
+            if current_e + dt * available_power < max_e:
+                charge_amt = available_power if available_power < max_charge else max_charge
+            else:
+                charge_amt = (max_e - current_e) / dt
+                if charge_amt > max_charge:
+                    charge_amt = max_charge
+            current_e = current_e + charge_amt * dt
+            battery_minus[i] = charge_amt
+        energy_state[i] = current_e
+    return battery_plus, battery_minus, energy_state
+
 class BS(BaseModel):
     """
     Class to represent a battery.
@@ -275,40 +603,20 @@ class BS(BaseModel):
         self.results["battery_plus"] = 0.
         self.results["battery_minus"] = 0.
         if control_type == "production_saving":
-            for key, df_tmp in self.results.iterrows():
-                # we have some consumption
-                if df_tmp.p > 0:
-                    # if battery is not empty
-                    if self.current_e_kwh > 0:
-                        if self.current_e_kwh - 0.25 * df_tmp.p > 0:
-                            self.discharge_amount = float(
-                                min(df_tmp.p, self.max_discharge_p_kw))
-                        # Battery does not have enought energy to
-                        # discharge at full power for the next 15 min
-                        else:
-                            self.discharge_amount = float(
-                                min(self.max_discharge_p_kw,
-                                    4 * self.current_e_kwh))
-                        self.discharge(self.discharge_amount, 0.25)
-                        self.results.loc[
-                            key, "battery_plus"] = self.discharge_amount
-                    else:
-                        # we have an empty battery
-                        pass
-                # we have some production
-                else:
-                    # we can charge the battery at full capacity
-                    if (self.current_e_kwh - 0.25 * df_tmp.p) < self.max_e_kwh:
-                        self.charge_amount = min(df_tmp.p * (-1),
-                                                 self.max_charge_p_kw)
-                    else:
-                        self.charge_amount = min(
-                            4 * (self.max_e_kwh - self.current_e_kwh),
-                            self.max_charge_p_kw)
-                    self.charge(self.charge_amount, 0.25)
-                    self.results.loc[key,
-                                     "battery_minus"] = -self.charge_amount
-                lst.append(self.current_e_kwh)
+            dt = 0.25  # 15-minute interval in hours
+            p_array = self.results["p"].values.astype(np.float64)
+            init_e = self.current_e_kwh
+            battery_plus, battery_minus, energy_state = jit_simulate_production_saving(
+                p_array, dt, init_e, self.max_e_kwh,
+                self.max_charge_p_kw, self.max_discharge_p_kw
+            )
+            self.results["battery_plus"] = battery_plus
+            # Note: production saving typically subtracts charging (so store negative)
+            self.results["battery_minus"] = -battery_minus
+            self.results["p_after"] = self.results["p"] - battery_plus - (-battery_minus)
+            self.results["var_bat"] = energy_state
+            self.current_e_kwh = energy_state[-1]
+            lst = list(energy_state)
         elif control_type == "installed_power":
             p_limit = round(self.get_min_p_lim(), 1)
             self.results["p_limit"] = p_limit
@@ -338,66 +646,48 @@ class BS(BaseModel):
                 for block in range(1, 6):
                     self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year) & (self.results.block == block), "p_limit"] = self.p_limits[block-1]
             lst = self.simulate_p_limit()
-        elif control_type == "MT_VT_shifting":
-            # run the simulation where all the energy is transfered from VT to MT (a single cycle)
-            # MT = from 22 to 6 and VT = from 6 to 22
-            for key, df_tmp in self.results.iterrows():
-                hour = (key - pd.Timedelta(1, "min")).hour
-                if hour <= 5 or hour >= 22:
-                    self.charge_amount = float(
-                        min(self._max_e_kwh / 8,
-                            (self._max_e_kwh - self.current_e_kwh) * 4,
-                            self.max_charge_p_kw))
-                    self.charge(self.charge_amount, 0.25)
-                    self.discharge_amount = 0.
-                    self.results.loc[key, "battery_minus"] = -self.charge_amount
-                else:
-                    self.discharge_amount = float(
-                        min(self._max_e_kwh / 16,
-                            (self.current_e_kwh) * 4, self.max_discharge_p_kw))
-                    self.discharge(self.discharge_amount, 0.25)
-                    self.charge_amount = 0.
-                    self.results.loc[key, "battery_plus"] = self.discharge_amount
-                lst.append(self.current_e_kwh)
-
+        if control_type == "MT_VT_shifting":
+            dt = 0.25  # time step in hours
+            # Extract hour values from the index; subtract 1 minute as in your original code.
+            # We assume the index contains Timestamps.
+            hours = np.array([(ts - pd.Timedelta(minutes=1)).hour for ts in self.results.index], dtype=np.int32)
+            
+            # Call the jitted function using the current battery state and parameters.
+            battery_plus, battery_minus, energy_state = jit_simulate_MT_VT_shift(
+                hours,
+                dt,
+                self.current_e_kwh,       # initial energy state
+                self.max_e_kwh,           # max battery capacity
+                self.max_charge_p_kw,     # max charging power
+                self.max_discharge_p_kw   # max discharging power
+            )
+            # Update results:
+            # In the original code, charging is recorded as battery_minus (and stored with a negative sign).
+            self.results["battery_plus"] = battery_plus
+            self.results["battery_minus"] = -battery_minus
+            # Reconstruct p_after as in your original logic.
+            self.results["p_after"] = self.results["p"] - battery_plus - (-battery_minus)
+            self.results["var_bat"] = energy_state
+            # Update current battery energy
+            self.current_e_kwh = energy_state[-1]
+            lst = list(energy_state)
 
         elif control_type == "5Tariff_manoeuvering":
-            for key, df_tmp in self.results.iterrows():
-                hour = (key - pd.Timedelta(1, "min")).hour
-                if hour <= 5 or hour >= 22:
-                    n_hours = 8
-                    self.charge_amount = float(
-                        min(self._max_e_kwh / n_hours,
-                            (self._max_e_kwh - self.current_e_kwh) * 4,
-                            self.max_charge_p_kw))
-                    self.discharge_amount = 0.
-                elif hour >= 7 and hour <= 13:
-                    n_hours = 7
-                    self.discharge_amount = float(
-                        min(self._max_e_kwh / n_hours,
-                            (self.current_e_kwh) * 4, self.max_discharge_p_kw))
-                    self.charge_amount = 0.
-                elif hour in [14, 15]:
-                    n_hours = 2
-                    self.charge_amount = float(
-                        min(self._max_e_kwh / n_hours,
-                            (self._max_e_kwh - self.current_e_kwh) * 4,
-                            self.max_charge_p_kw))
-                    self.discharge_amount = 0.
-                elif hour >= 16 and hour <= 19:
-                    n_hours = 4
-                    self.discharge_amount = float(
-                        min(self._max_e_kwh / n_hours,
-                            (self.current_e_kwh) * 4, self.max_discharge_p_kw))
-                    self.charge_amount = 0.
-                else:
-                    self.discharge_amount = 0.
-                    self.charge_amount = 0.
-                self.charge(self.charge_amount, 0.25)
-                self.discharge(self.discharge_amount, 0.25)
-                lst.append(self.current_e_kwh)
-                self.results.loc[key, "battery_plus"] = self.discharge_amount
-                self.results.loc[key, "battery_minus"] = -self.charge_amount
+            dt = 0.25  # 15-minute interval in hours
+            # Extract hour values from the index.
+            hours = np.array([(ts - pd.Timedelta(minutes=1)).hour for ts in self.results.index], dtype=np.int32)
+            init_e = self.current_e_kwh
+            battery_plus, battery_minus, energy_state = jit_simulate_5tariff(
+                hours, dt, init_e, self.max_e_kwh,
+                self.max_charge_p_kw, self.max_discharge_p_kw
+            )
+            self.results["battery_plus"] = battery_plus
+            # In this branch, we record charging as negative.
+            self.results["battery_minus"] = -battery_minus
+            self.results["p_after"] = self.results["p"] - battery_plus - (-battery_minus)
+            self.results["var_bat"] = energy_state
+            self.current_e_kwh = energy_state[-1]
+            lst = list(energy_state)
 
         self.results[
             "p_after"] = self.results.p - self.results.battery_plus - self.results.battery_minus
@@ -413,48 +703,33 @@ class BS(BaseModel):
         self.model(control_type=control_type, p_kw=p_kw)
         self.timeseries = self.results["p_after"]
         return self.timeseries
-
-    def is_p_limit_posible(self, p_limit):
+    
+    def is_p_limit_possible(self, p_limit):
         """
-        Function calculates the optimal limit of the maximum power
+        Determine if the given p_limit is possible.
+        Converts self.results["p"] to a NumPy array and calls the jitted function.
         """
-        for _, df_tmp in self.results.iterrows():
-            # lower the peak
-            if df_tmp.p > p_limit:
-                # if battery is not empty
-                if self.current_e_kwh >= 0:
-                    if df_tmp.p - p_limit > self.max_discharge_p_kw:
-                        # not enough max output
-                        return -1
-                    # Lower te peak till p_limit
-                    needed_output = float(df_tmp.p - p_limit)
-                    if self.current_e_kwh < needed_output * 0.25:
-                        # not enough energy
-                        return -1
-                    self.discharge_amount = needed_output
-                    self.discharge(self.discharge_amount, 0.25)
-                else:
-                    # we have an empty battery
-                    return -1
-            else:
-                # excess power to charge the battery
-                diff = p_limit - df_tmp.p
-                self.charge_amount = float(min(diff, self.max_charge_p_kw))
-                if self.current_e_kwh < self.max_e_kwh:
-                    if self.current_e_kwh + self.charge_amount * 0.25 > self.max_e_kwh:
-                        self.charge_amount = float(self.max_e_kwh -
-                                                   self.current_e_kwh) * 4
-                    self.charge(self.charge_amount, 0.25)
-                else:
-                    pass
-        return 1
+        # Ensure self.results is available; you might want to check or set it before calling this.
+        p_array = self.results["p"].values
+        dt = 0.25  # 15 minutes expressed in hours
+        # Call the jitted function
+        result = jit_is_p_limit_possible(
+            p_array,
+            p_limit,
+            self.current_e_kwh,
+            self.max_charge_p_kw,
+            self.max_discharge_p_kw,
+            self.max_e_kwh,
+            dt
+        )
+        return result
 
     def get_min_p_lim(self):
         """
         Function calculates the optimal limit of the maximum power
         """
         max_bound = self.results.p.max()
-        function = self.is_p_limit_posible
+        function = self.is_p_limit_possible
         root = optimize.bisect(function,
                                max_bound - self.max_discharge_p_kw - 1,
                                max_bound,
@@ -525,51 +800,31 @@ class BS(BaseModel):
         self.max_discharge_p_kw = storage_type.max_discharge_p_kw
         self.name = storage_type.name
         self.hard_reset()
-
-    def are_p_limits_posible(self, p_limits, max_soc = 1., month_df = None):
-        """
-        etermine if the p_limits are possible to achieve with the battery
-        Args:
-        --------
-        batt: BatteryStorage object
-        p_limits: list of floats, limit powers for every block
-        """
+    
+    def are_p_limits_posible(self, p_limits, max_soc=1., month_df=None):
         if month_df is None:
             df = self.results
         else:
             df = month_df
         self.hard_reset()
-        for _, df_tmp in df.iterrows():
-            # lower the peak
-            p_limit = p_limits[int(df_tmp.block)-1]
-            if df_tmp.p > p_limit:
-                # if battery is not empty
-                if self.current_e_kwh >= 0:
-                    if df_tmp.p - p_limit > self.max_discharge_p_kw:
-                        # not enough max output
-                        return -1
-                    # Lower te peak till p_limit
-                    needed_output = float(df_tmp.p - p_limit)
-                    if self.current_e_kwh < needed_output * 0.25:
-                        # not enough energy
-                        return -1
-                    self.discharge_amount = needed_output
-                    self.discharge(self.discharge_amount, 0.25)
-                else:
-                    # we have an empty battery
-                    return -1
-            else:
-                # excess power to charge the battery
-                diff = p_limit - df_tmp.p
-                self.charge_amount = float(min(diff, self.max_charge_p_kw))
-                if self.current_e_kwh < self.max_e_kwh*max_soc:
-                    if self.current_e_kwh + self.charge_amount * 0.25 > self.max_e_kwh*max_soc:
-                        self.charge_amount = float(self.max_e_kwh*max_soc -
-                                                   self.current_e_kwh) * 4
-                    self.charge(self.charge_amount, 0.25)
-                else:
-                    pass
-        return 1
+        
+        p_array = df["p"].values
+        block_array = df["block"].values  # assuming this exists
+        dt = 0.25  # time step in hours
+
+        # Call the JIT function with the required parameters
+        result = jit_are_p_limits_possible(
+            p_array,
+            block_array,
+            np.array(p_limits),
+            self.current_e_kwh,
+            self.max_charge_p_kw,
+            self.max_discharge_p_kw,
+            self.max_e_kwh * max_soc,
+            dt
+        )
+        return result
+
 
     def find_block_p_limit(self, p_limits, block, p_limits_orig= None, month_df = None):
 
@@ -663,62 +918,62 @@ class BS(BaseModel):
         return p_limits
     
     def simulate_p_limit(self):
-        """With already calculated p_limits, simulates the battery behaviour.
-        self.results["p_limit"] must be already defined"""
-        lst = []
-        self.hard_reset()
-        for key, df_tmp in self.results.iterrows():
-            p_limit = df_tmp.p_limit
-            if df_tmp.p > p_limit:
-                if self.current_e_kwh > 0:
-                    # if battery is not empty
-                    self.discharge_amount = float(
-                        min(df_tmp.p - p_limit, self.max_discharge_p_kw))
-                    if self.current_e_kwh < self.discharge_amount * 0.25:
-                        self.discharge_amount = self.current_e_kwh * 4
-                    self.discharge(self.discharge_amount, 0.25)
-                    self.results.loc[
-                        key, "battery_plus"] = self.discharge_amount
-                else:
-                    # we have an empty battery
-                    pass
-            # charging battery
-            else:
-                excess_power = p_limit - df_tmp.p
-                if self.current_e_kwh < self._max_e_kwh:
-                    self.charge_amount = min(excess_power,
-                                             self.max_charge_p_kw)
-                    if self.current_e_kwh + self.charge_amount * 0.25 > self._max_e_kwh:
-                        self.charge_amount = (self.max_e_kwh -
-                                              self.current_e_kwh) * 4
-                    self.results.loc[key,
-                                     "battery_minus"] = -self.charge_amount
-                    self.charge(self.charge_amount, 0.25)
-                else:
-                    # we have a full battery
-                    pass
-            lst.append(self.current_e_kwh)
-        return lst
+        """
+        With already calculated p_limits, simulates the battery behavior.
+        Assumes self.results["p_limit"] is already defined.
+        """
+        dt = 0.25  # 15-minute interval in hours
+        # Convert DataFrame columns to NumPy arrays:
+        p_array = self.results["p"].values.astype(np.float64)
+        p_limit_array = self.results["p_limit"].values.astype(np.float64)
+        
+        # Call the JIT function using the current battery state and parameters.
+        battery_plus, battery_minus, energy_state = jit_simulate_p_limit(
+            p_array,
+            p_limit_array,
+            dt,
+            self.current_e_kwh,   # initial energy state
+            self.max_e_kwh,       # maximum battery capacity
+            self.max_charge_p_kw, # maximum charging power
+            self.max_discharge_p_kw  # maximum discharging power
+        )
+        
+        # Store results in the DataFrame.
+        self.results["battery_plus"] = battery_plus
+        # In your original code, battery_minus was stored as negative.
+        # We computed positive charge amounts, so we store the negative value.
+        self.results["battery_minus"] = -battery_minus
+        # Compute p_after similar to your original logic.
+        self.results["p_after"] = self.results["p"] - battery_plus - (-battery_minus)
+        self.results["var_bat"] = energy_state
+        
+        # Optionally, update the current battery state.
+        self.current_e_kwh = energy_state[-1]
+        
+        # Return energy state as a list (or as an array if preferred).
+        return list(energy_state)
     
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from tariffsys import Settlement
     from copy import deepcopy
-
+    import time
     bs = BS(0, 0, 0, max_charge_p_kw=2000, max_discharge_p_kw=2000, max_e_kwh=4000)
     p_kw = pd.read_csv("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/ostalo/xyz.csv", parse_dates=["date_time"])
-    # Test MT_VT_shifting
-    # set date_time to be index in bs.results
+    # Test control
     p_kw.set_index("date_time", inplace=True)
-    bs.simulate(p_kw, control_type="MT_VT_shifting")
+    start = time.time()
+    bs.simulate(p_kw, control_type="production_saving")
+    print("Elapsed time:", time.time
+          () - start)
     # plot p and p_after
     # set date_time to be index in bs.results
-    # bs.results.set_index("date_time", inplace=True)
-    plt.plot(bs.results.p_after[1000:1400])
-    plt.plot(bs.results.p[1000:1400])
+
+    plt.plot(bs.results.p_after)
+    plt.plot(bs.results.p)
     # plot soc
-    plt.plot(bs.results.var_bat[1000:1400])
+    plt.plot(bs.results.var_bat)
     plt.legend(["p_after", "p", "soc"])
     plt.show()
 
