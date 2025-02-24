@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="consmodel",
-    version="0.2.0",
+    version="0.2.2",
     author="Blaž Dobravec",
     author_email="blaz@dobravec.si",
     description=
@@ -26,6 +26,6 @@ setuptools.setup(
         'setuptools>=42', 'retry_requests>=2.0.0', 'openmeteo_requests>=1.1.0',
         'requests_cache>=1.1.0', 'pvlib>=0.9.1', 'pandas>=1.5.2',
         'numpy>=1.22.4', 'tzfpy>=0.15.1', 'meteostat>=1.6.5', 'scipy>=1.10.0',
-        'hplib==1.9'
+        'hplib==1.9', 'numba>=0.54.0'
     ],
     python_requires=">=3.6")

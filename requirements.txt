@@ -20,3 +20,4 @@ cftime
 click
 matplotlib
 seaborn
+numba

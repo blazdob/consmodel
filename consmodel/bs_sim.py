@@ -184,14 +184,17 @@ def jit_simulate_MT_VT_shift(hours, dt, init_e, max_e, max_charge, max_discharge
             current_e = current_e + charge_amt * dt
             battery_minus[i] = charge_amt
         else:
-            # Daytime: discharge the battery
+            # Daytime: discharge the battery if the current energy is positive
             discharge_amt = max_e / 16
-            cand = current_e * 4
-            if cand < discharge_amt:
-                discharge_amt = cand
-            if max_discharge < discharge_amt:
-                discharge_amt = max_discharge
-            current_e = current_e - discharge_amt * dt
+            if current_e < 0:
+                discharge_amt = 0
+            else:
+                cand = current_e * 4
+                if cand < discharge_amt:
+                    discharge_amt = cand
+                if max_discharge < discharge_amt:
+                    discharge_amt = max_discharge
+                current_e = current_e - discharge_amt * dt
             battery_plus[i] = discharge_amt
         energy_state[i] = current_e
     return battery_plus, battery_minus, energy_state
