@@ -344,6 +344,88 @@ def jit_simulate_production_saving(p_array, dt, init_e, max_e, max_charge, max_d
         energy_state[i] = current_e
     return battery_plus, battery_minus, energy_state
 
+import numpy as np
+from numba import njit
+
+@njit
+def jit_simulate_combined(hours, p_array, dt, init_e, max_e, max_charge, max_discharge):
+    """
+    Combined simulation:
+      - Charges battery when there is surplus production (p < 0) using production saving logic.
+      - During VT (high tariff period, defined as 6 <= hr <= 21):
+          * If consumption is positive (p > 0), discharge battery at maximum power,
+            discharging as much as possible (up to max_discharge) until battery energy is 0.
+          * If consumption is zero, do nothing.
+      - Otherwise (nighttime) charge the battery per the shifting nighttime logic.
+      
+    Parameters:
+      hours       : 1D array of hour values.
+      p_array     : 1D array of power values (kW). Negative indicates surplus production.
+      dt          : Timestep in hours.
+      init_e      : Initial battery energy (kWh).
+      max_e       : Maximum battery capacity (kWh).
+      max_charge  : Maximum charging power (kW).
+      max_discharge: Maximum discharging power (kW).
+      
+    Returns:
+      battery_plus  : Array of discharge amounts (kW) at each timestep.
+      battery_minus : Array of charge amounts (kW) at each timestep.
+                      (Positive values; charging may be later treated with a negative sign.)
+      energy_state  : Array of battery energy (kWh) after each timestep.
+    """
+    n = hours.shape[0]
+    battery_plus = np.zeros(n)
+    battery_minus = np.zeros(n)
+    energy_state = np.empty(n)
+    current_e = init_e
+
+    for i in range(n):
+        hr = hours[i]
+        p = p_array[i]
+        
+        # Case 1: Surplus production (p < 0) -> charge battery (production saving charging logic)
+        if p < 0:
+            available_power = -p  # available production for charging
+            if current_e + dt * available_power < max_e:
+                charge_amt = available_power if available_power < max_charge else max_charge
+            else:
+                charge_amt = (max_e - current_e) / dt
+                if charge_amt > max_charge:
+                    charge_amt = max_charge
+            current_e += charge_amt * dt
+            battery_minus[i] = charge_amt
+        
+        # Case 2: VT period (6 <= hr <= 21)
+        elif 6 <= hr <= 22:
+            # If there is consumption, discharge at max power until battery is empty
+            if p > 0:
+                # discharge only the amount to 0
+                discharge_amt = max_discharge if p > max_discharge else p
+                # Ensure we don't discharge more than what is available in the battery:
+                if current_e < discharge_amt * dt:
+                    discharge_amt = current_e / dt  # discharge the remaining energy
+                current_e -= discharge_amt * dt
+                battery_plus[i] = discharge_amt
+            else:
+                # No consumption; do not discharge.
+                battery_plus[i] = 0.0
+        
+        # Case 3: Nighttime (hr <= 5 or hr >= 22) -> charge battery (shifting nighttime logic)
+        else:
+            charge_amt = max_e / 8
+            cand = (max_e - current_e) * 4
+            if cand < charge_amt:
+                charge_amt = cand
+            if max_charge < charge_amt:
+                charge_amt = max_charge
+            current_e += charge_amt * dt
+            battery_minus[i] = charge_amt
+        
+        energy_state[i] = current_e
+
+    return battery_plus, battery_minus, energy_state
+
+
 class BS(BaseModel):
     """
     Class to represent a battery.
@@ -620,6 +702,21 @@ class BS(BaseModel):
             self.results["var_bat"] = energy_state
             self.current_e_kwh = energy_state[-1]
             lst = list(energy_state)
+        elif control_type == "combined_production_vt":
+            dt = 0.25
+            hours = np.array([(ts - pd.Timedelta(minutes=1)).hour for ts in self.results.index], dtype=np.int32)
+            p_array = self.results["p"].values.astype(np.float64)
+            init_e = self.current_e_kwh
+            battery_plus, battery_minus, energy_state = jit_simulate_combined(
+                hours, p_array, dt, init_e, self.max_e_kwh,
+                self.max_charge_p_kw, self.max_discharge_p_kw
+            )
+            self.results["battery_plus"] = battery_plus
+            self.results["battery_minus"] = -battery_minus
+            self.results["p_after"] = self.results["p"] - battery_plus - (-battery_minus)
+            self.results["var_bat"] = energy_state
+            self.current_e_kwh = energy_state[-1]
+            lst = list(energy_state)
         elif control_type == "installed_power":
             p_limit = round(self.get_min_p_lim(), 1)
             self.results["p_limit"] = p_limit
@@ -664,7 +761,6 @@ class BS(BaseModel):
                 self.max_charge_p_kw,     # max charging power
                 self.max_discharge_p_kw   # max discharging power
             )
-            # Update results:
             # In the original code, charging is recorded as battery_minus (and stored with a negative sign).
             self.results["battery_plus"] = battery_plus
             self.results["battery_minus"] = -battery_minus
@@ -956,64 +1052,109 @@ class BS(BaseModel):
         # Return energy state as a list (or as an array if preferred).
         return list(energy_state)
     
+def mt_vt_amount(p_kw):
+    p_kw["hour"] = p_kw.index.hour
+    p_kw["day"] = p_kw.index.day
+
+    p_kw["vt_after"] = 0
+    p_kw["mt_after"] = 0
+    p_kw["vt_before"] = 0
+    p_kw["mt_before"] = 0
+
+    p_kw.loc[(p_kw["hour"] >= 6) & (p_kw["hour"] <= 21), "vt_after"] = p_kw["p_after"] * (p_kw["p_after"] > 0) * 0.25
+    p_kw.loc[(p_kw["hour"] < 6) | (p_kw["hour"] > 21), "mt_after"] = p_kw["p_after"] * (p_kw["p_after"] > 0) * 0.25
+    p_kw.loc[(p_kw["hour"] >= 6) & (p_kw["hour"] <= 21), "vt_before"] = p_kw["p"] * (p_kw["p"] > 0) * 0.25
+    p_kw.loc[(p_kw["hour"] < 6) | (p_kw["hour"] > 21), "mt_before"] = p_kw["p"] * (p_kw["p"] > 0) * 0.25
+
+    p_kw["production_after"] = p_kw["p_after"] * (p_kw["p_after"] < 0) * 0.25
+    p_kw["production_before"] = p_kw["p"] * (p_kw["p"] < 0) * 0.25
+
+    print("e_mt_before:", sum(p_kw["mt_before"]))
+    print("e_vt_before:", sum(p_kw["vt_before"]))
+    print("production_before:", sum(p_kw["production_before"]))
+    print("e_mt_after:", sum(p_kw["mt_after"]))
+    print("e_vt_after:", sum(p_kw["vt_after"]))
+    print("production_after:", sum(p_kw["production_after"]))
+
+    print("price_before:", sum(p_kw["mt_before"]) * 0.1 + sum(p_kw["vt_before"]) * 0.13 + sum(p_kw["production_before"]) * 0.047)
+    print("price_after:", sum(p_kw["mt_after"]) * 0.1 + sum(p_kw["vt_after"]) * 0.18 + sum(p_kw["production_after"]) * 0.047)
+    
+    print("sum: ", sum(p_kw["mt_after"]) + sum(p_kw["vt_after"]) + sum(p_kw["production_after"]))
+    print("sum: ", sum(p_kw["mt_before"]) + sum(p_kw["vt_before"]) + sum(p_kw["production_before"]))
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from tariffsys import Settlement
     from copy import deepcopy
     import time
-    bs = BS(0, 0, 0, max_charge_p_kw=2000, max_discharge_p_kw=2000, max_e_kwh=4000)
-    p_kw = pd.read_csv("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/ostalo/xyz.csv", parse_dates=["date_time"])
+    import plotly.express as px
+    bs = BS(0, 0, 0, max_charge_p_kw=50, max_discharge_p_kw=50, max_e_kwh=100)
+    # p_kw = pd.read_csv("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/ostalo/xyz.csv", parse_dates=["date_time"])
+    p_kw = pd.read_excel("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/018_8027851/3-8027851-15minMeritve2024-01-01-2024-12-31.xlsx", engine='openpyxl')
+    
+    p_kw["a_plus"] = p_kw["Energija A+"]
+    p_kw["a_minus"] = p_kw["Energija A-"]
+    p_kw["a"] = p_kw["a_plus"] - p_kw["a_minus"]
+    p_kw["p"] = p_kw["P+ Prejeta delovna moč"] - p_kw["P- Oddana delovna moč"]
+    p_kw["date_time"] = p_kw["Časovna značka"]
+    
     # Test control
     p_kw.set_index("date_time", inplace=True)
+    # drop duplicate index
+    p_kw = p_kw[~p_kw.index.duplicated(keep='first')]
     start = time.time()
-    bs.simulate(p_kw, control_type="production_saving")
-    print("Elapsed time:", time.time
-          () - start)
-    # plot p and p_after
+    bs.simulate(p_kw, control_type="combined_production_vt")
+    print("Elapsed time:", time.time() - start)
     # set date_time to be index in bs.results
 
-    plt.plot(bs.results.p_after)
-    plt.plot(bs.results.p)
-    # plot soc
-    plt.plot(bs.results.var_bat)
-    plt.legend(["p_after", "p", "soc"])
-    plt.show()
+    # plot using plotly express
 
-    operating_hours = 2501 if 1 else 1
+    fig = px.line(bs.results, x=bs.results.index, y="p_after", title="Power consumption")
+    
+    fig.add_scatter(x=bs.results.index, y=bs.results["p"], mode="lines", name="p")
 
-    tech_df = pd.DataFrame({
-        "smm": [0],
-        "num_phases": [3],
-        "connected_power": [p_kw['p'].max()],
-        "consumer_type": [1],
-        "consumer_type_id": [4],
-        "reduced_network_fee": [0],
-        "operating_hours": [operating_hours],
-        "reduced_ove_spte": [0],
-        "connection_scheme": [0],
-        "community_consumption": [0],
-        "community_production": [0],
-        "storage": [0],
-        "billing_power": [p_kw['p'].max()],
-        "num_tariffs": [2],
-        "connection_type_id": [5 if 1 else 1]
-    })
-    s = Settlement()
+    fig.add_scatter(x=bs.results.index, y=bs.results["var_bat"], mode="lines", name="var_bat")
 
-    s.calculate_settlement(smm=0, timeseries_data=p_kw, load_manually=True, tech_data=tech_df)
-    print("before:", s.output["ts_results"])
-    e_mt_original = sum(s.output["ts_results"]["e_mt"])
-    e_vt_original = sum(s.output["ts_results"]["e_vt"])
-    df_after = deepcopy(bs.results)
-    df_after["p"] = df_after["p_after"]
-    s.calculate_settlement(smm=0, timeseries_data=df_after, load_manually=True, tech_data=tech_df)
-    print("after:", s.output["ts_results"])
-    e_mt_after = sum(s.output["ts_results"]["e_mt"])
-    e_vt_after = sum(s.output["ts_results"]["e_vt"])
+    fig.show()
 
-    print("mt_diff:", e_mt_original - e_mt_after)
-    print("vt_diff:", e_vt_original - e_vt_after)
-    # calculate savings on (e_mt + e_vt) between the two scenarios
-    savings = (e_mt_original * 0.13 + e_vt_original * 0.18) - (e_mt_after * 0.13 + e_vt_after * 0.18)
-    print("savings:", savings)
+    # calcualte amount of energy consumed in VT and MT
+
+    mt_vt_amount(bs.results)
+
+    # operating_hours = 2501 if 1 else 1
+
+    # tech_df = pd.DataFrame({
+    #     "smm": [0],
+    #     "num_phases": [3],
+    #     "connected_power": [p_kw['p'].max()],
+    #     "consumer_type": [1],
+    #     "consumer_type_id": [4],
+    #     "reduced_network_fee": [0],
+    #     "operating_hours": [operating_hours],
+    #     "reduced_ove_spte": [0],
+    #     "connection_scheme": [0],
+    #     "community_consumption": [0],
+    #     "community_production": [0],
+    #     "storage": [0],
+    #     "billing_power": [p_kw['p'].max()],
+    #     "num_tariffs": [2],
+    #     "connection_type_id": [5 if 1 else 1]
+    # })
+    # s = Settlement()
+
+    # s.calculate_settlement(smm=0, timeseries_data=p_kw, load_manually=True, tech_data=tech_df)
+    # print("before:", s.output["ts_results"])
+    # e_mt_original = sum(s.output["ts_results"]["e_mt"])
+    # e_vt_original = sum(s.output["ts_results"]["e_vt"])
+    # df_after = deepcopy(bs.results)
+    # df_after["p"] = df_after["p_after"]
+    # s.calculate_settlement(smm=0, timeseries_data=df_after, load_manually=True, tech_data=tech_df)
+    # print("after:", s.output["ts_results"])
+    # e_mt_after = sum(s.output["ts_results"]["e_mt"])
+    # e_vt_after = sum(s.output["ts_results"]["e_vt"])
+
+    # print("mt_diff:", e_mt_original - e_mt_after)
+    # print("vt_diff:", e_vt_original - e_vt_after)
+    # # calculate savings on (e_mt + e_vt) between the two scenarios
+    # savings = (e_mt_original * 0.13 + e_vt_original * 0.18) - (e_mt_after * 0.13 + e_vt_after * 0.18)
+    # print("savings:", savings)
