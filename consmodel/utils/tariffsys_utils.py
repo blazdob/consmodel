@@ -69,3 +69,28 @@ def individual_tariff_times(dates: np.array) -> np.array:
         i += 1
 
     return tariff_mask
+
+def find_min_obr_p(n_phases: int, connected_power: int) -> float:
+    if connected_power > 43:
+        return 0.25 * connected_power
+    elif connected_power <= 43 and n_phases == 1:
+        if 0.31 * connected_power > 2:
+            return 0.31 * connected_power
+        else:
+            return 2
+    elif connected_power <= 17 and n_phases == 3:
+        if 0.27 * connected_power > 3.5:
+            return 0.27 * connected_power
+        else:
+            return 3.5
+    elif connected_power <= 43 and connected_power > 17 and n_phases == 3:
+        if 0.34 * connected_power > 3.5:
+            return 0.34 * connected_power
+        else:
+            return 3.5
+    else:
+        # produce a warning
+        print(
+            "Warning: it is not possible to calculate the minimum proposed settlement power."
+        )
+        return 0.

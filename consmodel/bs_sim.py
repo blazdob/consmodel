@@ -11,6 +11,7 @@ import numpy as np
 from consmodel.utils.st_types import StorageType
 from consmodel.base_model import BaseModel
 from consmodel.utils import individual_tariff_times, extract_first_date_of_month
+from consmodel.utils.tariffsys_utils import find_min_obr_p
 
 
 from numba import njit
@@ -680,6 +681,7 @@ class BS(BaseModel):
             | 2020-01-01 00:15:00 |    0.0     |
             |         ...         |    ...     |
         """
+        print("Modeling the battery")
         if p_kw is None:
             raise ValueError(
                 "We need a timeseries data to simulate the battery.")
@@ -740,9 +742,10 @@ class BS(BaseModel):
             self.results["block"] = blocks
             first_dates = extract_first_date_of_month(self.results)
             self.results["p_limit"] = 0
+            self.est_connected_power = self.results.p.max()
             for date in first_dates:
                 month_df = self.results[(((self.results.index- pd.Timedelta(minutes= 15)).month ) == date.month) & ((self.results.index- pd.Timedelta(minutes= 15)).year == date.year)]
-                self.p_limits = self.find_p_limits(month_df = month_df) 
+                self.p_limits = self.find_p_limits(month_df = month_df, connected_power = self.est_connected_power) 
                 print(self.p_limits)              
                 for block in range(1, 6):
                     self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year) & (self.results.block == block), "p_limit"] = self.p_limits[block-1]
@@ -976,7 +979,7 @@ class BS(BaseModel):
                 current_max = p_limits[i]
         return p_limits, p_limits_orig
     
-    def find_p_limits(self, month_df = None):
+    def find_p_limits(self, month_df = None, connected_power = 0):
         """
         Find the optimal p_limits for the battery
         Args:
@@ -998,11 +1001,17 @@ class BS(BaseModel):
             df = self.results
         else:
             df = month_df
+        min_obr_p = find_min_obr_p(3, connected_power)  
+        print("min obr p: ", min_obr_p)
         for block in range(1, 6):
             if block == 1:
-                if len(df[df["block"] == block]) > 0:                    
-                    p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig, month_df = month_df) + 0.1, 1)
+                if len(df[df["block"] == block]) > 0:      
+                     
+                    #Power limit should not be lower than minimum settlement power   
+                           
+                    p_limit = round(max(self.find_block_p_limit(p_limits, block, p_limits_orig, month_df = month_df) + 0.1, min_obr_p), 1)
                     p_limits[0] = p_limit
+
                 else:
                     p_limits[0] = 0
             else:
@@ -1010,10 +1019,11 @@ class BS(BaseModel):
                 p_limits_min[block-1] = p_limits[block-2]
                 # If it is possible, that p_limit is the same as in the previous block we take it
                 if self.are_p_limits_posible(p_limits_min, month_df= month_df) == 1:
-                    p_limits[block-1] = p_limits[block-2]
+                    p_limit = p_limits[block-2]
+                    
                 else:
                     p_limit = round(self.find_block_p_limit(p_limits, block, p_limits_orig, month_df=month_df) + 0.1, 1)
-                    p_limits[block-1] = p_limit
+                p_limits[block-1] = max(p_limit, min_obr_p)
 
         return p_limits
     
