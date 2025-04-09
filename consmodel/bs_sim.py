@@ -724,6 +724,11 @@ class BS(BaseModel):
             self.results["p_limit"] = p_limit
             self.curr_limit = p_limit
             lst = self.simulate_p_limit()
+        elif control_type == "negative_installed_power":
+            p_limit = round(self.get_min_p_lim(negative= True), 1)
+            self.results["p_limit"] = -p_limit
+            self.curr_limit = -p_limit
+            lst = self.simulate_p_limit(negative = True)
         elif control_type == "block_power_reduction":
             # Find installed power limits for every block      
             dates = np.array(list(self.results.index))
@@ -746,7 +751,7 @@ class BS(BaseModel):
             for date in first_dates:
                 month_df = self.results[(((self.results.index- pd.Timedelta(minutes= 15)).month ) == date.month) & ((self.results.index- pd.Timedelta(minutes= 15)).year == date.year)]
                 self.p_limits = self.find_p_limits(month_df = month_df, connected_power = self.est_connected_power) 
-                print(self.p_limits)              
+                             
                 for block in range(1, 6):
                     self.results.loc[((self.results.index- pd.Timedelta(minutes=15)).month == date.month) & ((self.results.index- pd.Timedelta(minutes=15)).year == date.year) & (self.results.block == block), "p_limit"] = self.p_limits[block-1]
             lst = self.simulate_p_limit()
@@ -813,7 +818,13 @@ class BS(BaseModel):
         Converts self.results["p"] to a NumPy array and calls the jitted function.
         """
         # Ensure self.results is available; you might want to check or set it before calling this.
-        p_array = self.results["p"].values
+        if self.p_limit_side == "negative":
+            # temporarily invert the p_limit, charge and discharge for the calculation
+            factor = -1
+        else:
+            factor = 1
+        p_array = self.results["p"].values.astype(np.float64) * factor
+        # Convert p_limit to a NumPy array
         dt = 0.25  # 15 minutes expressed in hours
         # Call the jitted function
         result = jit_is_p_limit_possible(
@@ -827,17 +838,40 @@ class BS(BaseModel):
         )
         return result
 
-    def get_min_p_lim(self, month_df = None):
+    def get_min_p_lim(self, negative = False, month_df = None):
         """
         Function calculates the optimal limit of the maximum power
         """
-        max_bound = self.results.p.max()
-        function = self.is_p_limit_possible
+        if negative:
+            self.p_limit_side = "negative"
+            max_bound = self.results.p.min()*-1
+            min_bound = max_bound - self.max_charge_p_kw - 1
+            # temporary switch charging and discharging for the calculation
+            charge = self.max_discharge_p_kw
+            discharge = self.max_charge_p_kw
+            self.max_discharge_p_kw = discharge
+            self.max_charge_p_kw = charge
+            # add argument to the function
+            function = self.is_p_limit_possible
+        else:
+            self.p_limit_side = "positive"
+            max_bound = self.results.p.max()
+            min_bound = max_bound - self.max_discharge_p_kw - 1
+            function = self.is_p_limit_possible
+        
         root = optimize.bisect(function,
-                               max_bound - self.max_discharge_p_kw - 1,
+                               min_bound,
                                max_bound,
                                xtol=0.05)
-        return root
+        if negative:
+            # switch back the charging and discharging
+            charge = self.max_discharge_p_kw
+            discharge = self.max_charge_p_kw
+            self.max_discharge_p_kw = discharge
+            self.max_charge_p_kw = charge
+            return root*-1
+        else:
+            return root
 
     def soft_reset(self):
         """
@@ -1002,7 +1036,6 @@ class BS(BaseModel):
         else:
             df = month_df
         min_obr_p = find_min_obr_p(3, connected_power)  
-        print("min obr p: ", min_obr_p)
         for block in range(1, 6):
             if block == 1:
                 if len(df[df["block"] == block]) > 0:      
@@ -1027,7 +1060,7 @@ class BS(BaseModel):
 
         return p_limits
     
-    def simulate_p_limit(self):
+    def simulate_p_limit(self, negative = False):
         """
         With already calculated p_limits, simulates the battery behavior.
         Assumes self.results["p_limit"] is already defined.
@@ -1036,7 +1069,8 @@ class BS(BaseModel):
         # Convert DataFrame columns to NumPy arrays:
         p_array = self.results["p"].values.astype(np.float64)
         p_limit_array = self.results["p_limit"].values.astype(np.float64)
-        
+        if negative:
+            p_array = -p_array
         # Call the JIT function using the current battery state and parameters.
         battery_plus, battery_minus, energy_state = jit_simulate_p_limit(
             p_array,
@@ -1049,6 +1083,12 @@ class BS(BaseModel):
         )
         
         # Store results in the DataFrame.
+        if negative:
+            battery_plus_neg = -1*battery_minus
+            battery_minus_neg = battery_plus
+            battery_plus = battery_plus_neg
+            battery_minus = battery_minus_neg
+            self.results["p_limit"] *= -1
         self.results["battery_plus"] = battery_plus
         # In your original code, battery_minus was stored as negative.
         # We computed positive charge amounts, so we store the negative value.
