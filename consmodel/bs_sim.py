@@ -704,28 +704,17 @@ class BS(BaseModel):
             self.results["var_bat"] = energy_state
             self.current_e_kwh = energy_state[-1]
             lst = list(energy_state)
-        elif control_type == "combined_production_vt":
-            dt = 0.25
-            hours = np.array([(ts - pd.Timedelta(minutes=1)).hour for ts in self.results.index], dtype=np.int32)
-            p_array = self.results["p"].values.astype(np.float64)
-            init_e = self.current_e_kwh
-            battery_plus, battery_minus, energy_state = jit_simulate_combined(
-                hours, p_array, dt, init_e, self.max_e_kwh,
-                self.max_charge_p_kw, self.max_discharge_p_kw
-            )
-            self.results["battery_plus"] = battery_plus
-            self.results["battery_minus"] = -battery_minus
-            self.results["p_after"] = self.results["p"] - battery_plus - (-battery_minus)
-            self.results["var_bat"] = energy_state
-            self.current_e_kwh = energy_state[-1]
-            lst = list(energy_state)
         elif control_type == "installed_power":
             p_limit = round(self.get_min_p_lim(), 1)
+            if p_limit < 0:
+                p_limit = 0
             self.results["p_limit"] = p_limit
             self.curr_limit = p_limit
             lst = self.simulate_p_limit()
         elif control_type == "negative_installed_power":
             p_limit = round(self.get_min_p_lim(negative= True), 1)
+            if p_limit > 0:
+                p_limit = 0
             self.results["p_limit"] = -p_limit
             self.curr_limit = -p_limit
             lst = self.simulate_p_limit(negative = True)
@@ -1139,9 +1128,10 @@ if __name__ == "__main__":
     from copy import deepcopy
     import time
     import plotly.express as px
-    bs = BS(0, 0, 0, max_charge_p_kw=50, max_discharge_p_kw=50, max_e_kwh=100)
+    bs = BS(0, 0, 0, max_charge_p_kw=400, max_discharge_p_kw=400, max_e_kwh=800)
     # p_kw = pd.read_csv("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/ostalo/xyz.csv", parse_dates=["date_time"])
-    p_kw = pd.read_excel("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/018_8027851/3-8027851-15minMeritve2024-01-01-2024-12-31.xlsx", engine='openpyxl')
+    # p_kw = pd.read_excel("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/018_8027851/3-8027851-15minMeritve2024-01-01-2024-12-31.xlsx", engine='openpyxl')
+    p_kw = pd.read_excel("/Users/blazdobravec/Documents/WORK/EKSTERNI-PROJEKTI/Kalkulator_GE/009_Plastika_Virant/3-8029335-15minMeritve2023-01-01-2023-12-31(1).xlsx", engine='openpyxl')
     
     p_kw["a_plus"] = p_kw["Energija A+"]
     p_kw["a_minus"] = p_kw["Energija A-"]
@@ -1154,23 +1144,43 @@ if __name__ == "__main__":
     # drop duplicate index
     p_kw = p_kw[~p_kw.index.duplicated(keep='first')]
     start = time.time()
-    bs.simulate(p_kw, control_type="combined_production_vt")
+    bs.simulate(p_kw, control_type="negative_installed_power")
+    neg_install_res = bs.results
+    bs.simulate(p_kw, control_type="production_saving")
+    pos_install_res_prod = bs.results
+    bs.simulate(p_kw, control_type="monthly_block_power_reduction")
+    month_block_res = bs.results
+
+
+    # results:
+    final_df = month_block_res.copy()
+    # now change the values of p_after based on neg_install_res, and procudction_saving
+    # (self.df_after_energy.p_after *
+            #  ((self.df_after_energy.p_after <= self.df_after_block_inst.p_limit) | (self.df_after_energy.p_after > self.df_after_negative_inst.p_limit))
+            #  + self.df_after_block_inst.p_limit *
+            #  (self.df_after_energy.p_after > self.df_after_block_inst.p_limit)
+            #  - self.df_after_negative_inst *
+            #     (self.df_after_energy.p_after < self.df_after_negative_inst.p_limit)
+    # final_df["p_after"] = (
+    #     month_block_res["p_after"] *
+    #     ((month_block_res["p_after"] <= neg_install_res["p_after"]) | (month_block_res["p_after"] > pos_install_res_prod["p_after"])) +
+    
     print("Elapsed time:", time.time() - start)
     # set date_time to be index in bs.results
 
     # plot using plotly express
 
-    fig = px.line(bs.results, x=bs.results.index, y="p_after", title="Power consumption")
+    fig = px.line(final_df, x=final_df.index, y="p_after", title="Power consumption")
     
-    fig.add_scatter(x=bs.results.index, y=bs.results["p"], mode="lines", name="p")
+    fig.add_scatter(x=final_df.index, y=p_kw["p"], mode="lines", name="p")
 
-    fig.add_scatter(x=bs.results.index, y=bs.results["var_bat"], mode="lines", name="var_bat")
+    fig.add_scatter(x=final_df.index, y=final_df["var_bat"], mode="lines", name="var_bat")
 
     fig.show()
 
     # calcualte amount of energy consumed in VT and MT
 
-    mt_vt_amount(bs.results)
+    mt_vt_amount(final_df)
 
     # operating_hours = 2501 if 1 else 1
 
